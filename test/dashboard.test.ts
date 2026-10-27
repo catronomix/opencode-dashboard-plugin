@@ -1,0 +1,350 @@
+import { test } from "node:test"
+import assert from "node:assert/strict"
+
+import { createNoiseField, palette, Perlin, readable, SAVER_FLOOR } from "../src/palette.ts"
+import { flattenTree, formatAge, formatCost, formatTokens, formatClock, padEnd, truncate, type SubVM } from "../src/view.ts"
+import { buildRows, cardHeight, clampOffsets, contentSize, CARD_WIDTH, DETAIL_ROWS, HEADER_ROWS, type CardVM, type Palette } from "../src/render.ts"
+
+const theme: Palette = {
+  text: [220, 220, 220],
+  muted: [160, 160, 160],
+  faint: [110, 110, 110],
+  background: [20, 20, 20],
+  border: [90, 90, 90],
+  accent: [120, 170, 255],
+  ok: [110, 200, 120],
+  warn: [230, 190, 100],
+  error: [230, 120, 120],
+}
+
+const sub: SubVM = {
+  path: "~/code/project/sub",
+  model: "deepseek-v4.1-flash",
+  agent: "builder",
+  ctxLabel: "40k/200k",
+  ctxRatio: 0.2,
+  tokensLabel: "120k",
+  costLabel: "$0.02",
+  ageLabel: "1m",
+}
+
+const view = {
+  width: 80,
+  height: 12,
+  offsetX: 0,
+  offsetY: 0,
+  screensaver: false,
+  saverEnabled: true,
+  expanded: false,
+  seconds: 0,
+  idleMs: 0,
+  idleLimit: 120_000,
+  palette: theme,
+  sourceLabel: "source: tabs",
+  empty: "empty",
+}
+
+function card(overrides: Partial<CardVM> = {}): CardVM {
+  return {
+    id: "ses_1",
+    title: "Fix auth bug",
+    path: "~/code/project",
+    model: "deepseek-v4.1-flash",
+    agent: "build",
+    status: "running",
+    active: true,
+    ctxLabel: "132k/200k",
+    ctxRatio: 0.66,
+    tokensLabel: "8.1M · 6.1M cache",
+    costLabel: "$0.12",
+    ageLabel: "2m",
+    tree: [],
+    ...overrides,
+  }
+}
+
+test("palette is black below 40%", () => {
+  assert.deepEqual(palette(0), [0, 0, 0])
+  assert.deepEqual(palette(0.39), [0, 0, 0])
+})
+
+test("palette fades from black to red between 40% and 50%", () => {
+  assert.deepEqual(palette(0.4), [0, 0, 0])
+  assert.deepEqual(palette(0.45), [127, 0, 0])
+  assert.deepEqual(palette(0.5), [255, 0, 0])
+})
+
+test("palette walks a full hue cycle from 50% to 100%", () => {
+  const at60 = palette(0.6)
+  const at80 = palette(0.8)
+  assert.notDeepEqual(at60, at80)
+  // 100% completes the loop back to red.
+  assert.deepEqual(palette(1), [255, 0, 0])
+  // Saturated full-brightness colours only.
+  for (const step of [0.55, 0.62, 0.7, 0.83, 0.97]) {
+    const color = palette(step)
+    assert.equal(Math.max(...color), 255)
+    assert.equal(Math.min(...color), 0)
+  }
+  assert.deepEqual(palette(2), palette(1))
+})
+
+test("perlin noise is deterministic and bounded", () => {
+  const left = new Perlin(42)
+  const right = new Perlin(42)
+  for (let index = 0; index < 50; index++) {
+    const x = index * 0.31
+    const y = index * 0.17
+    const z = index * 0.07
+    const value = left.noise3(x, y, z)
+    assert.equal(value, right.noise3(x, y, z))
+    assert.ok(value > -1.2 && value < 1.2, `noise out of range: ${value}`)
+  }
+})
+
+test("noise field animates over time", () => {
+  const field = createNoiseField()
+  const points: Array<[number, number]> = [
+    [10, 4],
+    [24, 9],
+    [48, 12],
+    [70, 20],
+  ]
+  const changed = points.some(([x, y]) => {
+    const still = field.at(x, y, 0)
+    const later = field.at(x, y, 3.5)
+    for (const channel of still) assert.ok(channel >= 0 && channel <= 255)
+    return still.join() !== later.join()
+  })
+  assert.ok(changed, "no sample changed colour over 3.5s")
+})
+
+test("token and cost formatting", () => {
+  assert.equal(formatTokens(0), "0")
+  assert.equal(formatTokens(999), "999")
+  assert.equal(formatTokens(1200), "1.2k")
+  assert.equal(formatTokens(12345), "12k")
+  assert.equal(formatTokens(8_123_456), "8.12M")
+  assert.equal(formatCost(0), "$0")
+  assert.equal(formatCost(0.0012), "$0.001")
+  assert.equal(formatCost(1.234), "$1.23")
+})
+
+test("ages and clock", () => {
+  assert.equal(formatAge(1_000, 2_000), "now")
+  assert.equal(formatAge(0, 30_000), "30s")
+  assert.equal(formatAge(0, 5 * 60_000), "5m")
+  assert.equal(formatAge(0, 3 * 3_600_000), "3h")
+  assert.equal(formatClock(65_000), "1:05")
+})
+
+test("truncate and padEnd respect display width", () => {
+  assert.equal(truncate("abcdef", 10), "abcdef")
+  assert.equal(truncate("abcdef", 4), "abc…")
+  assert.equal(truncate("abcdef", 1), "…")
+  assert.equal(padEnd("ab", 4), "ab  ")
+  assert.equal(padEnd("abcdef", 3), "abc")
+})
+
+test("tree flattening keeps connectors and depth", () => {
+  const lines = flattenTree([
+    { id: "a", title: "builder", detail: "running", status: "running", children: [
+      { id: "b", title: "reviewer", detail: "idle", status: "idle", children: [] },
+    ] },
+    { id: "c", title: "explore", detail: "idle", status: "idle", children: [] },
+  ])
+  assert.deepEqual(
+    lines.map((line) => `${line.connector}${line.title}`),
+    ["├─ builder", "│  └─ reviewer", "└─ explore"],
+  )
+  assert.deepEqual(
+    lines.map((line) => line.id),
+    ["a", "b", "c"],
+  )
+})
+
+test("tree flattening carries the subagent detail block", () => {
+  const lines = flattenTree([
+    { id: "a", title: "builder", detail: "running", status: "running", sub, children: [] },
+  ])
+  assert.deepEqual(lines[0].sub, sub)
+})
+
+test("card height grows with the subagent tree", () => {
+  assert.equal(cardHeight(card()), 8)
+  const withTree = card({
+    tree: [
+      { id: "a", connector: "├─ ", title: "builder", detail: "running", status: "running", sub },
+      { id: "b", connector: "└─ ", title: "reviewer", detail: "idle", status: "idle" },
+    ],
+  })
+  assert.equal(cardHeight(withTree), 11)
+  // Each subagent with a detail payload adds its block only when expanded.
+  assert.equal(cardHeight(withTree, true), 11 + DETAIL_ROWS)
+})
+
+test("content size covers every card plus gaps", () => {
+  const size = contentSize([card(), card()])
+  assert.equal(size.width, 2 * CARD_WIDTH + 2 + 2)
+  assert.equal(size.height, 8)
+})
+
+test("offsets clamp to scrollable range", () => {
+  const cards = [card(), card(), card()]
+  assert.deepEqual(clampOffsets(cards, 40, 20, 0, 0), { offsetX: 0, offsetY: 0 })
+  const max = clampOffsets(cards, 40, 20, 10_000, 10_000)
+  assert.ok(max.offsetX > 0)
+  assert.equal(max.offsetY, 0)
+})
+
+test("buildRows fills the viewport with styled rows", () => {
+  const rows = buildRows({ ...view, cards: [card()] })
+  assert.equal(rows.length, 12)
+  for (const row of rows) {
+    const width = row.reduce((total, run) => total + Array.from(run.text).length, 0)
+    assert.equal(width, 80)
+  }
+  const header = rows[0].map((run) => run.text).join("")
+  assert.match(header, /OPENCODE DASHBOARD/)
+  assert.match(header, /1 sessions/)
+  assert.match(header, /screensaver in 2:00/)
+})
+
+test("scrolling shifts card content and clips at the edges", () => {
+  const base = {
+    ...view,
+    width: 60,
+    height: 20,
+    offsetY: 0,
+    cards: [card(), card({ id: "ses_2", title: "Second" }), card({ id: "ses_3", title: "Third" })],
+  }
+  const left = buildRows({ ...base, offsetX: 0 }).map((row) => row.map((run) => run.text).join("")).join("\n")
+  const right = buildRows({ ...base, offsetX: 100 }).map((row) => row.map((run) => run.text).join("")).join("\n")
+  assert.match(left, /Fix auth bug/)
+  assert.doesNotMatch(right, /Fix auth bug/)
+  assert.match(right, /Third/)
+})
+
+test("the subagent divider lines up with the card sides", () => {
+  const rows = buildRows({
+    ...view,
+    cards: [
+      card({
+        tree: [{ id: "a", connector: "└─ ", title: "builder", detail: "running", status: "running" }],
+      }),
+    ],
+  })
+  const lines = rows.map((row) => row.map((run) => run.text).join(""))
+  const top = lines[HEADER_ROWS]
+  const divider = lines[HEADER_ROWS + 7]
+  const left = top.indexOf("╭")
+  const right = top.indexOf("╮")
+  assert.equal(left, 1)
+  // ├ and ┤ sit exactly under the card's vertical borders, one cell in.
+  assert.equal(divider.indexOf("├"), left)
+  assert.equal(divider.indexOf("┤"), right)
+  assert.equal(divider.slice(left + 1, right), "─".repeat(right - left - 1))
+})
+
+test("selection is visible on the card header and the selected subagent row", () => {
+  const tree = [
+    { id: "a", connector: "├─ ", title: "builder", detail: "running", status: "running" as const, sub },
+    { id: "b", connector: "└─ ", title: "reviewer", detail: "idle", status: "idle" as const },
+  ]
+  const text = (rows: ReturnType<typeof buildRows>) =>
+    rows.map((row) => row.map((run) => run.text).join("")).join("\n")
+  const onCard = text(buildRows({ ...view, height: 24, cards: [card({ selected: true, tree })] }))
+  assert.match(onCard, /· selected/)
+
+  const onRow = text(
+    buildRows({
+      ...view,
+      height: 24,
+      cards: [
+        card({
+          tree: tree.map((line, index) => ({ ...line, selected: index === 1 })),
+        }),
+      ],
+    }),
+  )
+  assert.match(onRow, /◂/)
+  assert.match(onRow, /reviewer/)
+})
+
+test("expanded details repeat the card fields under each subagent", () => {
+  const tree = [{ id: "a", connector: "└─ ", title: "builder", detail: "running", status: "running" as const, sub }]
+  const collapsed = buildRows({ ...view, height: 24, cards: [card({ tree })] })
+  const expanded = buildRows({ ...view, height: 24, expanded: true, cards: [card({ tree })] })
+  const text = (rows: ReturnType<typeof buildRows>) =>
+    rows.map((row) => row.map((run) => run.text).join("")).join("\n")
+  assert.doesNotMatch(text(collapsed), /project\/sub/)
+  const shown = text(expanded)
+  assert.match(shown, /project\/sub/)
+  assert.match(shown, /builder · deepseek-v4\.1-flash/)
+  assert.match(shown, /ctx /)
+  assert.match(shown, /tok 120k/)
+})
+
+test("space expands a single subagent row regardless of the global fold", () => {
+  const tree = [
+    { id: "a", connector: "├─ ", title: "builder", detail: "running", status: "running" as const, sub, expanded: true },
+    { id: "b", connector: "└─ ", title: "reviewer", detail: "idle", status: "idle" as const, sub: { ...sub, path: "~/code/other" }, expanded: false },
+  ]
+  const rows = buildRows({ ...view, height: 24, expanded: false, cards: [card({ tree })] })
+  const text = rows.map((row) => row.map((run) => run.text).join("")).join("\n")
+  assert.match(text, /project\/sub/)
+  assert.doesNotMatch(text, /code\/other/)
+  assert.equal(cardHeight(card({ tree }), false), 8 + 3 + DETAIL_ROWS)
+})
+
+test("the screensaver keeps glyphs on a readable dark grey floor", () => {  assert.deepEqual(readable([0, 0, 0]), [SAVER_FLOOR, SAVER_FLOOR, SAVER_FLOOR])
+  assert.deepEqual(readable([255, 0, 40]), [255, SAVER_FLOOR, SAVER_FLOOR])
+  // Identity is cached so run merging keeps working.
+  const source = palette(0.2)
+  assert.equal(readable(source), readable(source))
+})
+
+test("screensaver recolours glyphs and leaves blanks alone", () => {
+  const rows = buildRows({
+    ...view,
+    height: 10,
+    screensaver: true,
+    seconds: 4,
+    idleMs: 120_000,
+    idleLimit: 120_000,
+    cards: [card({ tree: [] })],
+  })
+  const text = rows.map((row) => row.map((run) => run.text).join("")).join("\n")
+  assert.match(text, /OPENCODE DASHBOARD/)
+  assert.match(text, /screensaver/)
+  assert.doesNotMatch(text, /screensaver in/)
+  // Nothing is painted black-on-black: every glyph colour clears the floor.
+  for (const row of rows) {
+    for (const run of row) {
+      if (!run.text.trim()) continue
+      assert.ok(Math.min(...run.fg) >= SAVER_FLOOR, `run too dark: ${run.text} ${run.fg}`)
+    }
+  }
+})
+
+test("a disabled screensaver never takes over", () => {
+  const rows = buildRows({
+    ...view,
+    height: 10,
+    saverEnabled: false,
+    screensaver: false,
+    idleMs: 120_000,
+    idleLimit: 120_000,
+    cards: [card()],
+  })
+  assert.match(rows[0].map((run) => run.text).join(""), /screensaver off/)
+})
+
+test("HEADER_ROWS leaves room for chrome", () => {
+  assert.equal(HEADER_ROWS, 3)
+})
+
+test("empty dashboards explain themselves", () => {
+  const rows = buildRows({ ...view, width: 50, height: 6, cards: [], empty: "No open session tabs." })
+  assert.match(rows.map((row) => row.map((run) => run.text).join("")).join("\n"), /No open session tabs/)
+})
