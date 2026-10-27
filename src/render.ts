@@ -10,9 +10,14 @@
 import { createNoiseField, readable, type RGB } from "./palette.ts"
 import { formatClock, padEnd, truncate, type SubVM, type TreeLine } from "./view.ts"
 
-export const CARD_WIDTH = 50
+/** Columns between two cards. */
 export const CARD_GAP = 2
-const INNER = CARD_WIDTH - 4
+/** A card narrower than this cannot show its fields at all. */
+export const MIN_CARD_WIDTH = 24
+/** `D`ynamic: the selected card grows by this factor... */
+export const DYNAMIC_WIDE = 1.2
+/** ...while every other card shrinks to this factor. */
+export const DYNAMIC_SLIM = 0.75
 
 /** Rows a subagent detail block adds under its tree line: path, agent·model, ctx, tok, cost·age. */
 export const DETAIL_ROWS = 5
@@ -58,6 +63,12 @@ export interface ViewModel {
   readonly saverEnabled: boolean
   /** Subagent detail blocks are expanded (toggled with `f`, persisted). */
   readonly expanded: boolean
+  /** Default card width in columns (from the settings file). */
+  readonly cardWidth: number
+  /** `D`ynamic widths: the selected card is wider, the rest slimmer. */
+  readonly dynamic: boolean
+  /** Index of the selected card, so `dynamic` knows which one to widen. */
+  readonly selectedIndex: number
   readonly seconds: number
   readonly idleMs: number
   readonly idleLimit: number
@@ -65,6 +76,35 @@ export interface ViewModel {
   readonly palette: Palette
   readonly sourceLabel: string
   readonly empty: string
+}
+
+/** How cards are sized: plain, or the `D`ynamic emphasis around the selection. */
+export interface Layout {
+  /** Default card width in columns. */
+  readonly base: number
+  readonly dynamic: boolean
+  readonly selected: number
+  readonly expanded: boolean
+}
+
+export function layoutOf(vm: ViewModel): Layout {
+  return { base: vm.cardWidth, dynamic: vm.dynamic, selected: vm.selectedIndex, expanded: vm.expanded }
+}
+
+/** Per-card widths; with `dynamic` the selected card gains 20%, the rest lose 25%. */
+export function cardWidths(count: number, layout: Layout): number[] {
+  const base = Math.max(MIN_CARD_WIDTH, layout.base)
+  if (!layout.dynamic) return Array.from({ length: count }, () => base)
+  const wide = Math.max(MIN_CARD_WIDTH, Math.round(base * DYNAMIC_WIDE))
+  const slim = Math.max(MIN_CARD_WIDTH, Math.round(base * DYNAMIC_SLIM))
+  return Array.from({ length: count }, (_, index) => (index === layout.selected ? wide : slim))
+}
+
+/** Left column of a card, in un-scrolled content coordinates (first card at 1). */
+export function cardLeft(widths: readonly number[], index: number): number {
+  let left = 1
+  for (let at = 0; at < index && at < widths.length; at++) left += widths[at] + CARD_GAP
+  return left
 }
 
 export interface Run {
@@ -151,10 +191,11 @@ export function isExpanded(line: TreeLine, expanded: boolean): boolean {
   return line.expanded ?? expanded
 }
 
-export function contentSize(cards: readonly CardVM[], expanded = false): { width: number; height: number } {
+export function contentSize(cards: readonly CardVM[], layout: Layout): { width: number; height: number } {
   if (!cards.length) return { width: 0, height: 0 }
-  const width = cards.length * CARD_WIDTH + (cards.length - 1) * CARD_GAP + 2
-  const height = cards.reduce((max, card) => Math.max(max, cardHeight(card, expanded)), 0)
+  const widths = cardWidths(cards.length, layout)
+  const width = widths.reduce((total, value) => total + value, 0) + (cards.length - 1) * CARD_GAP + 2
+  const height = cards.reduce((max, card) => Math.max(max, cardHeight(card, layout.expanded)), 0)
   return { width, height }
 }
 
@@ -165,9 +206,9 @@ export function clampOffsets(
   height: number,
   offsetX: number,
   offsetY: number,
-  expanded = false,
+  layout: Layout,
 ): { offsetX: number; offsetY: number } {
-  const content = contentSize(cards, expanded)
+  const content = contentSize(cards, layout)
   const viewportHeight = Math.max(1, height - HEADER_ROWS)
   const maxX = Math.max(0, content.width - width + 2)
   const maxY = Math.max(0, content.height - viewportHeight)
@@ -242,23 +283,24 @@ function drawCard(
   canvas: Canvas,
   x: number,
   y: number,
+  width: number,
   card: CardVM,
   palette: Palette,
   expanded: boolean,
 ) {
   const border = card.active || card.selected ? palette.accent : palette.border
-  const inner = INNER
-  const right = x + CARD_WIDTH - 1
+  const inner = width - 4
+  const right = x + width - 1
   const dot = statusDot(card, palette)
   const rows = cardHeight(card, expanded)
   const bottom = y + rows - 1
 
   // Frame.
   canvas.put(x, y, "╭", border)
-  canvas.text(x + 1, y, "─".repeat(CARD_WIDTH - 2), border)
+  canvas.text(x + 1, y, "─".repeat(width - 2), border)
   canvas.put(right, y, "╮", border)
   canvas.put(x, bottom, "╰", border)
-  canvas.text(x + 1, bottom, "─".repeat(CARD_WIDTH - 2), border)
+  canvas.text(x + 1, bottom, "─".repeat(width - 2), border)
   canvas.put(right, bottom, "╯", border)
   for (let row = y + 1; row < bottom; row++) {
     canvas.put(x, row, "│", border)
@@ -284,7 +326,7 @@ function drawCard(
   const write = (index: number, value: string, fg: RGB, bold = false) =>
     canvas.text(x + 2, line(index), padEnd(truncate(value, inner), inner), fg, bold)
 
-  if (card.selected) canvas.put(x + CARD_WIDTH - 2, line(0), "◂", palette.accent, true)
+  if (card.selected) canvas.put(x + width - 2, line(0), "◂", palette.accent, true)
 
   write(0, card.title || "(untitled session)", card.selected ? palette.accent : palette.text, true)
   write(1, card.path, palette.muted)
@@ -298,7 +340,7 @@ function drawCard(
   if (card.tree.length) {
     const separatorY = line(6)
     canvas.put(x, separatorY, "├", border)
-    canvas.text(x + 1, separatorY, "─".repeat(CARD_WIDTH - 2), border)
+    canvas.text(x + 1, separatorY, "─".repeat(width - 2), border)
     canvas.put(right, separatorY, "┤", border)
     let row = 7
     card.tree.forEach((entry) => {
@@ -310,10 +352,10 @@ function drawCard(
         Math.max(0, room),
       )
       const fg = entry.selected ? palette.accent : entry.status === "running" ? palette.ok : palette.muted
-      if (entry.selected) canvas.put(x + CARD_WIDTH - 2, line(row), "◂", palette.accent, true)
+      if (entry.selected) canvas.put(x + width - 2, line(row), "◂", palette.accent, true)
       canvas.text(x + 2, line(row), label, fg, entry.selected)
       canvas.text(
-        x + CARD_WIDTH - 3 - Array.from(detail).length,
+        x + width - 3 - Array.from(detail).length,
         line(row),
         detail,
         entry.selected ? palette.accent : entry.status === "running" ? palette.ok : palette.faint,
@@ -361,7 +403,19 @@ export function buildRows(vm: ViewModel): Row[] {
   )
   canvas.text(Math.max(0, width - Array.from(clockText).length), 0, clockText, clockFg, vm.screensaver)
 
-  const hints = "esc/q close ←/→ card ↑/↓ row enter open space fold PgUp/PgDn f all s saver"
+  // Key hints: letter shortcuts show the key that types them, so `[F]old all`
+  // is `F`; special keys get their whole name bracketed. `·` separates groups.
+  const hints = [
+    "[esc/q] close",
+    "[←/→] card",
+    "[↑/↓] row",
+    "[enter] open",
+    "[space] fold",
+    "[F]old all",
+    "[D]ynamic",
+    "[S]creensaver",
+    "[PgUp/PgDn] scroll",
+  ].join(" · ")
   canvas.text(0, 1, truncate(hints, Math.max(0, width - vm.sourceLabel.length - 2)), palette.faint)
   canvas.text(
     Math.max(0, width - Array.from(vm.sourceLabel).length),
@@ -375,10 +429,13 @@ export function buildRows(vm: ViewModel): Row[] {
   if (!vm.cards.length) {
     canvas.text(2, HEADER_ROWS, vm.empty, palette.muted)
   } else {
+    const layout = layoutOf(vm)
+    const widths = cardWidths(vm.cards.length, layout)
     vm.cards.forEach((card, index) => {
-      const x = 1 + index * (CARD_WIDTH + CARD_GAP) - vm.offsetX
-      if (x + CARD_WIDTH < 0 || x >= width) return
-      drawCard(canvas, x, HEADER_ROWS - vm.offsetY, card, palette, vm.expanded)
+      const cardWidth = widths[index]
+      const x = cardLeft(widths, index) - vm.offsetX
+      if (x + cardWidth < 0 || x >= width) return
+      drawCard(canvas, x, HEADER_ROWS - vm.offsetY, cardWidth, card, palette, vm.expanded)
     })
   }
 

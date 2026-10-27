@@ -4,12 +4,12 @@ import type { Context, Route } from "@opencode/plugin/tui/context"
 import { appendFileSync } from "node:fs"
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 
-import { buildRows, cardHeight, clampOffsets, CARD_GAP, CARD_WIDTH, HEADER_ROWS, type CardVM, type Palette, type Row } from "./render.ts"
+import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, HEADER_ROWS, type CardVM, type Layout, type Palette, type Row } from "./render.ts"
 import { flattenTree, formatAge, formatCost, formatTokens, type SubVM, type TreeNode } from "./view.ts"
+import { loadConfig } from "./config.ts"
 import type { RGB } from "./palette.ts"
 
 const PAGE = "session-dashboard"
-const IDLE_LIMIT = 2 * 60 * 1000
 const BLOCK_BG = "#000000"
 const DEBUG_FILE = `${process.env.TEMP ?? process.env.TMPDIR ?? "."}/session-dashboard-debug.log`
 
@@ -94,7 +94,7 @@ export default Plugin.define({
               if (now.type === "plugin" && now.name === PAGE) context.ui.router.navigate({ type: "home" })
             }, 250)
           }
-          return <Dashboard context={context} close={close} />
+          return <Dashboard context={context} close={close} initialTab={previousTab} />
         } catch (error) {
           // A throwing render leaves an empty page and a toast with no detail.
           // Draw the failure instead, so it is visible and in the debug log.
@@ -154,10 +154,16 @@ export default Plugin.define({
 interface DashboardProps {
   readonly context: Context
   readonly close: (destination?: Route) => void
+  /** Session of the tab that was active when the dashboard opened. */
+  readonly initialTab?: string
 }
 
 function Dashboard(props: DashboardProps) {
   const context = props.context
+  // Settings live in `session-dashboard.json` next to the OpenCode config:
+  // default card width (clamped 40..100) and the screensaver delay.
+  const config = loadConfig((message) => debug(message))
+  const limitMs = config.screensaverSeconds * 1000
   const [size, setSize] = createSignal({
     width: Math.max(1, context.renderer.width),
     height: Math.max(1, context.renderer.height),
@@ -167,9 +173,10 @@ function Dashboard(props: DashboardProps) {
   const [lastInput, setLastInput] = createSignal(Date.now())
   const [now, setNow] = createSignal(Date.now())
   const [fills, setFills] = createSignal<Record<string, Fill>>({})
-  // Durable view settings: screensaver on/off and subagent details expanded.
+  // Durable view settings: screensaver on/off, subagent details expanded, and
+  // the `D`ynamic card widths.
   const [settings, updateSettings] = context.storage.store("session-dashboard", {
-    initial: { saver: true, expanded: true },
+    initial: { saver: true, expanded: true, dynamic: false },
   })
   // Selection: a card, or one of its subagent rows (row === -1 = the card).
   const [selection, setSelection] = createSignal<{ card: number; row: number }>({ card: 0, row: -1 })
@@ -188,7 +195,7 @@ function Dashboard(props: DashboardProps) {
   onCleanup(() => context.renderer.off("resize", onResize))
 
   const idleMs = () => Math.max(0, now() - lastInput())
-  const screensaver = () => settings.saver && idleMs() >= IDLE_LIMIT
+  const screensaver = () => settings.saver && idleMs() >= limitMs
 
   // Animation clock: fast while the screensaver runs, relaxed otherwise.
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -429,11 +436,19 @@ function Dashboard(props: DashboardProps) {
     return includeActive() ? "tabs + active" : "tabs"
   })
 
+  // Card sizing: the settings-file default, optionally emphasised around the
+  // selection with `D`ynamic widths.
+  const layout = createMemo<Layout>(() => ({
+    base: config.width,
+    dynamic: Boolean(settings.dynamic),
+    selected: selection().card,
+    expanded: settings.expanded,
+  }))
+
   const rows = createMemo<Row[]>(() => {
     const current = size()
     const scroll = offset()
-    const expanded = settings.expanded
-    const clamped = clampOffsets(cards(), current.width, current.height, scroll.x, scroll.y, expanded)
+    const clamped = clampOffsets(cards(), current.width, current.height, scroll.x, scroll.y, layout())
     return buildRows({
       width: Math.max(1, current.width),
       height: Math.max(1, current.height),
@@ -441,10 +456,13 @@ function Dashboard(props: DashboardProps) {
       offsetY: clamped.offsetY,
       screensaver: screensaver(),
       saverEnabled: settings.saver,
-      expanded,
+      expanded: settings.expanded,
+      cardWidth: config.width,
+      dynamic: Boolean(settings.dynamic),
+      selectedIndex: selection().card,
       seconds: now() / 1000,
       idleMs: idleMs(),
-      idleLimit: IDLE_LIMIT,
+      idleLimit: limitMs,
       cards: cards(),
       palette: palette(),
       sourceLabel: sourceLabel(),
@@ -511,7 +529,7 @@ function Dashboard(props: DashboardProps) {
         current.height,
         previous.x + dx,
         previous.y + dy,
-        settings.expanded,
+        layout(),
       )
       return { x: next.offsetX, y: next.offsetY }
     })
@@ -543,19 +561,37 @@ function Dashboard(props: DashboardProps) {
     const current = size()
     const viewport = Math.max(1, current.height - HEADER_ROWS)
     const height = cardHeight(card, settings.expanded)
+    const widths = cardWidths(list.length, { ...layout(), selected: cardIndex })
+    const width = widths[cardIndex] ?? config.width
+    const left = cardLeft(widths, cardIndex)
     setOffset((previous) => {
       let offsetX = previous.x
       let offsetY = previous.y
-      const left = 1 + cardIndex * (CARD_WIDTH + CARD_GAP)
       if (left - offsetX < 1) offsetX = Math.max(0, left - 1)
-      if (left + CARD_WIDTH - offsetX > current.width) offsetX = left + CARD_WIDTH - current.width
+      if (left + width - offsetX > current.width) offsetX = left + width - current.width
       // Cards are laid out side by side, so a card that fits simply starts at
       // the top; a taller one keeps whatever vertical scroll it had.
       if (height <= viewport) offsetY = 0
-      const next = clampOffsets(list, current.width, current.height, offsetX, offsetY, settings.expanded)
+      const next = clampOffsets(list, current.width, current.height, offsetX, offsetY, {
+        ...layout(),
+        selected: cardIndex,
+      })
       return { x: next.offsetX, y: next.offsetY }
     })
   }
+
+  // Open on the tab the user came from, not always the leftmost card.
+  let preselected = false
+  createEffect(() => {
+    const list = cards()
+    if (preselected || !list.length) return
+    preselected = true
+    const index = props.initialTab ? list.findIndex((card) => card.id === props.initialTab) : -1
+    if (index <= 0) return
+    debug(`preselect card ${index} for ${props.initialTab}`)
+    setSelection({ card: index, row: -1 })
+    reveal(index)
+  })
 
   const moveCard = (delta: number) => {
     touch()
@@ -660,12 +696,33 @@ function Dashboard(props: DashboardProps) {
           }),
       },
       {
+        // `D`ynamic widths: the selected card gains 20%, the rest lose 25%.
+        id: "session-dashboard.toggle-dynamic",
+        bind: "d",
+        run: () =>
+          wake(() => {
+            touch()
+            void updateSettings((draft) => {
+              draft.dynamic = !draft.dynamic
+            })
+          }),
+      },
+      {
         // Enables/disables the screensaver, persisted across restarts. Pressing
-        // it while the screensaver is on also wakes the dashboard.
+        // it while the screensaver is on also wakes the dashboard; turning it
+        // back on starts the screensaver immediately instead of waiting out the
+        // idle delay.
         id: "session-dashboard.toggle-saver",
         bind: "s",
         run: () => {
-          touch()
+          if (settings.saver) touch()
+          else {
+            // Re-enabling shows the screensaver at once: backdate the last
+            // input past the idle limit and repaint on this tick.
+            setLastInput(Date.now() - limitMs)
+            setNow(Date.now())
+            debug(`screensaver enabled -> on (limit ${limitMs}ms)`)
+          }
           void updateSettings((draft) => {
             draft.saver = !draft.saver
           })

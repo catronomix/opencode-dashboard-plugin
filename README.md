@@ -39,14 +39,16 @@ prompted with love.
   (path, agent · model, context bar, tokens, cost · age).
 - **Keyboard selection** — move across cards with `←`/`→`, down into the tree
   with `↑`/`↓`, and open the selected session in the main TUI with `enter`.
-- **Screensaver** — after two minutes of no input the dashboard fades to a black
-  background with the whole canvas recoloured by an animated Perlin-noise
-  palette. Dark colours are clamped to a dark-grey floor so text stays legible.
-  Any key wakes it without leaking into the UI behind.
-- **Returns you where you were** — closing the dashboard re-opens the tab that
-  was active when you opened it, instead of dumping you on a new chat.
-- **Persisted preferences** — screensaver on/off and the global fold state are
-  stored across restarts via the plugin storage API.
+- **Screensaver** — after two minutes of no input (configurable) the dashboard
+  fades to a black background with the whole canvas recoloured by an animated
+  Perlin-noise palette. Dark colours are clamped to a dark-grey floor so text
+  stays legible. Any key wakes it without leaking into the UI behind.
+- **`D`ynamic widths** — the selected card grows to 120% of the default width
+  while every other card shrinks to 75%.
+- **Returns you where you were** — opening focuses the card for the tab you came
+  from, and closing re-opens that tab instead of dumping you on a new chat.
+- **Persisted preferences** — screensaver on/off, dynamic widths and the global
+  fold state are stored across restarts via the plugin storage API.
 
 ## Keys
 
@@ -59,10 +61,33 @@ prompted with love.
 | `enter` / `return` | Open the selected session (card or subagent) and exit |
 | `space` | Expand/collapse the selection (one subagent row, or all rows of a selected card) |
 | `f` | Fold/expand all subagent details (persisted, clears per-row overrides) |
+| `d` | `D`ynamic widths: emphasise the selected card, slim the others |
 | `a` | Show active sessions only |
-| `s` | Toggle the screensaver on/off (persisted) |
+| `s` | Toggle the screensaver on/off (persisted; re-enabling shows it at once) |
 | `PgUp` / `PgDn` | Scroll a page |
 | `g` / `G` | Jump to top / bottom |
+
+## Settings
+
+Settings live in `~/.config/opencode/session-dashboard.json` (or
+`$OPENCODE_CONFIG_DIR/session-dashboard.json`). The file is written with the
+defaults on first run:
+
+```json
+{
+  "width": 45,
+  "screensaverSeconds": 120
+}
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `width` | `45` | Default card width in columns, clamped to 40–100 |
+| `screensaverSeconds` | `120` | Idle seconds before the screensaver starts, clamped to 10–3600 |
+
+Bad or missing values fall back to the defaults; a malformed file never breaks
+the dashboard. The two persisted view toggles (`s` and `d`) are stored by the
+host, not in this file.
 
 ## Install
 
@@ -99,7 +124,8 @@ written to disk.
 | --- | --- |
 | `src/index.ts` | Server-side plugin entry; the dashboard itself is TUI-only |
 | `src/tui.tsx` | Plugin setup, routing/close logic, view models, selection and keymap |
-| `src/render.ts` | Pure canvas renderer: cards, subagent detail blocks, chrome, rows |
+| `src/render.ts` | Pure canvas renderer: card layout/widths, cards, subagent detail blocks, chrome, rows |
+| `src/config.ts` | Settings file path, parsing and clamping (width, screensaver delay) |
 | `src/view.ts` | View types, tree flattening and the token/cost/age formatters |
 | `src/palette.ts` | Theme-derived palette and the screensaver's noise palette |
 | `scripts/deploy.mjs` | Copy `src/*.ts|tsx` into the local plugin directory |

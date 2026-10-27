@@ -3,7 +3,8 @@ import assert from "node:assert/strict"
 
 import { createNoiseField, palette, Perlin, readable, SAVER_FLOOR } from "../src/palette.ts"
 import { flattenTree, formatAge, formatCost, formatTokens, formatClock, padEnd, truncate, type SubVM } from "../src/view.ts"
-import { buildRows, cardHeight, clampOffsets, contentSize, CARD_WIDTH, DETAIL_ROWS, HEADER_ROWS, type CardVM, type Palette } from "../src/render.ts"
+import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, contentSize, DETAIL_ROWS, HEADER_ROWS, type CardVM, type Layout, type Palette } from "../src/render.ts"
+import { DEFAULT_CONFIG, DEFAULT_WIDTH, MAX_WIDTH, MIN_WIDTH, configPath, parseConfig } from "../src/config.ts"
 
 const theme: Palette = {
   text: [220, 220, 220],
@@ -36,6 +37,9 @@ const view = {
   screensaver: false,
   saverEnabled: true,
   expanded: false,
+  cardWidth: DEFAULT_WIDTH,
+  dynamic: false,
+  selectedIndex: 0,
   seconds: 0,
   idleMs: 0,
   idleLimit: 120_000,
@@ -43,6 +47,12 @@ const view = {
   sourceLabel: "source: tabs",
   empty: "empty",
 }
+
+const plain: Layout = { base: DEFAULT_WIDTH, dynamic: false, selected: 0, expanded: false }
+
+/** Indexes of every `glyph` in `text`, for frame-corner assertions. */
+const collect = (text: string, glyph: string): number[] =>
+  Array.from(text).flatMap((ch, index) => (ch === glyph ? [index] : []))
 
 function card(overrides: Partial<CardVM> = {}): CardVM {
   return {
@@ -184,15 +194,15 @@ test("card height grows with the subagent tree", () => {
 })
 
 test("content size covers every card plus gaps", () => {
-  const size = contentSize([card(), card()])
-  assert.equal(size.width, 2 * CARD_WIDTH + 2 + 2)
+  const size = contentSize([card(), card()], plain)
+  assert.equal(size.width, 2 * DEFAULT_WIDTH + 2 + 2)
   assert.equal(size.height, 8)
 })
 
 test("offsets clamp to scrollable range", () => {
   const cards = [card(), card(), card()]
-  assert.deepEqual(clampOffsets(cards, 40, 20, 0, 0), { offsetX: 0, offsetY: 0 })
-  const max = clampOffsets(cards, 40, 20, 10_000, 10_000)
+  assert.deepEqual(clampOffsets(cards, 40, 20, 0, 0, plain), { offsetX: 0, offsetY: 0 })
+  const max = clampOffsets(cards, 40, 20, 10_000, 10_000, plain)
   assert.ok(max.offsetX > 0)
   assert.equal(max.offsetY, 0)
 })
@@ -218,8 +228,10 @@ test("scrolling shifts card content and clips at the edges", () => {
     offsetY: 0,
     cards: [card(), card({ id: "ses_2", title: "Second" }), card({ id: "ses_3", title: "Third" })],
   }
+  // Scroll to the far right of the content, the way the dashboard clamps it.
+  const maxX = clampOffsets(base.cards, 60, 20, 10_000, 0, plain).offsetX
   const left = buildRows({ ...base, offsetX: 0 }).map((row) => row.map((run) => run.text).join("")).join("\n")
-  const right = buildRows({ ...base, offsetX: 100 }).map((row) => row.map((run) => run.text).join("")).join("\n")
+  const right = buildRows({ ...base, offsetX: maxX }).map((row) => row.map((run) => run.text).join("")).join("\n")
   assert.match(left, /Fix auth bug/)
   assert.doesNotMatch(right, /Fix auth bug/)
   assert.match(right, /Third/)
@@ -342,6 +354,67 @@ test("a disabled screensaver never takes over", () => {
 
 test("HEADER_ROWS leaves room for chrome", () => {
   assert.equal(HEADER_ROWS, 3)
+})
+
+test("settings clamp the card width and the screensaver delay", () => {
+  assert.deepEqual(parseConfig(undefined), DEFAULT_CONFIG)
+  assert.equal(DEFAULT_CONFIG.width, 45)
+  assert.equal(DEFAULT_CONFIG.screensaverSeconds, 120)
+  // Width is clamped to 40..100, whatever the file says.
+  assert.equal(parseConfig({ width: 10 }).width, MIN_WIDTH)
+  assert.equal(parseConfig({ width: 500 }).width, MAX_WIDTH)
+  assert.equal(parseConfig({ width: 62 }).width, 62)
+  assert.equal(parseConfig({ cardWidth: "48" }).width, 48)
+  // Junk in one key must not lose the other.
+  assert.equal(parseConfig({ width: "wide", screensaverSeconds: 300 }).screensaverSeconds, 300)
+  assert.deepEqual(parseConfig("nonsense"), DEFAULT_CONFIG)
+})
+
+test("the settings file sits next to the OpenCode config", () => {
+  assert.match(configPath({}), /session-dashboard\.json$/)
+  assert.match(configPath({ OPENCODE_CONFIG_DIR: "C:/cfg" }), /cfg[\\/]session-dashboard\.json$/)
+})
+
+test("D dynamic widens the selection and slims the rest", () => {
+  const plainWidths = cardWidths(3, plain)
+  assert.deepEqual(plainWidths, [DEFAULT_WIDTH, DEFAULT_WIDTH, DEFAULT_WIDTH])
+
+  const dynamicWidths = cardWidths(3, { ...plain, dynamic: true, selected: 1 })
+  assert.equal(dynamicWidths[1], Math.round(DEFAULT_WIDTH * 1.2))
+  assert.equal(dynamicWidths[0], Math.round(DEFAULT_WIDTH * 0.75))
+  assert.equal(dynamicWidths[2], dynamicWidths[0])
+
+  // Cards stay side by side after a wider selection: lefts follow the widths.
+  assert.equal(cardLeft(dynamicWidths, 0), 1)
+  assert.equal(cardLeft(dynamicWidths, 1), 1 + dynamicWidths[0] + 2)
+  assert.equal(cardLeft(dynamicWidths, 2), 1 + dynamicWidths[0] + dynamicWidths[1] + 4)
+})
+
+test("D dynamic keeps the selected card frame closed and intact", () => {
+  const rows = buildRows({
+    ...view,
+    width: 200,
+    dynamic: true,
+    selectedIndex: 1,
+    cards: [card({ id: "ses_1", title: "Left" }), card({ id: "ses_2", title: "Wide" }), card({ id: "ses_3", title: "Right" })],
+  })
+  const top = rows[HEADER_ROWS].map((run) => run.text).join("")
+  // Three closed boxes, in order, with the middle one wider than the rest.
+  const corners = collect(top, "╭")
+  const ends = collect(top, "╮")
+  assert.equal(corners.length, 3)
+  assert.equal(ends.length, 3)
+  const widths = corners.map((left, index) => ends[index] - left + 1)
+  assert.equal(widths[1], Math.round(DEFAULT_WIDTH * 1.2))
+  assert.equal(widths[0], Math.round(DEFAULT_WIDTH * 0.75))
+})
+
+test("the hint row brackets every key", () => {
+  const rows = buildRows({ ...view, width: 200, cards: [card()] })
+  const hints = rows[1].map((run) => run.text).join("")
+  for (const hint of ["[esc/q] close", "[←/→] card", "[enter] open", "[F]old all", "[D]ynamic", "[S]creensaver"]) {
+    assert.ok(hints.includes(hint), `missing ${hint} in ${hints}`)
+  }
 })
 
 test("empty dashboards explain themselves", () => {
