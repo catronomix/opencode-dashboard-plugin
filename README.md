@@ -1,8 +1,26 @@
 # opencode-session-dashboard
 
-A fullscreen TUI plugin for [OpenCode](https://opencode.ai) that shows every open
-session as a card — live status, context use, token counts, cost and the
-subagents each session has spawned — plus an idle screensaver.
+A fullscreen TUI plugin for [OpenCode](https://opencode.ai)
+
+```
+Do you ever feel like you are staring at the prompt input box a bit too much, 
+flicking trough tabs to see what your agents are doing?
+ 
+Then this plugin is for you! 
+OpenCode Dashboard is a fullscreen overlay that shows all open/active sessions, 
+listing statistics for all your agents in one overview. See the session title, 
+location, model, context fill, token hits and spenditure of each agent, 
+including subagents - nesting supported!
+ 
+Maybe that's still TMI for you? No worries! 
+The f key quickly folds all subagents in single lines. 
+ 
+Things can be pretty boring after a few minutes of staring at your 
+swarm crawls trough your precious token budget. But no more: when idle, 
+you will get treated to a groovy perlin noise animation.
+This plugin is entirely created and maintained with OpenCode, 
+prompted with love.
+```
 
 > **AI-generated.** This plugin was written almost entirely by an AI coding
 > agent (working under human direction and review). Treat it as such: read the
