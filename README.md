@@ -72,7 +72,7 @@ The installed copy is **source-only**: OpenCode resolves `@opencode/plugin`,
 no `node_modules` (and a local copy would shadow the host's instances).
 
 ```bash
-git clone <repo-url> opencode-session-dashboard
+git clone https://github.com/catronomix/opencode-dashboard-plugin.git opencode-session-dashboard
 cd opencode-session-dashboard
 npm install          # dev dependencies, for typecheck and tests only
 npm run deploy       # copies src/*.ts|tsx to ~/.config/opencode/plugins/session-dashboard
