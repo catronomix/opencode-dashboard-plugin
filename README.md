@@ -1,0 +1,104 @@
+# opencode-session-dashboard
+
+A fullscreen TUI plugin for [OpenCode](https://opencode.ai) that shows every open
+session as a card — live status, context use, token counts, cost and the
+subagents each session has spawned — plus an idle screensaver.
+
+> **AI-generated.** This plugin was written almost entirely by an AI coding
+> agent (working under human direction and review). Treat it as such: read the
+> source before relying on it, and expect rough edges. Issues and pull requests
+> are welcome.
+
+---
+
+## Features
+
+- **Session cards** — one card per open tab: title, working directory, agent and
+  model, a context-window bar, token totals, cost and age. The card whose tab is
+  focused is marked `· focused`; running sessions get a green header dot.
+- **Subagent tree** — child sessions are listed under their parent with a status
+  and their current activity. Each subagent has an expandable detail block
+  (path, agent · model, context bar, tokens, cost · age).
+- **Keyboard selection** — move across cards with `←`/`→`, down into the tree
+  with `↑`/`↓`, and open the selected session in the main TUI with `enter`.
+- **Screensaver** — after two minutes of no input the dashboard fades to a black
+  background with the whole canvas recoloured by an animated Perlin-noise
+  palette. Dark colours are clamped to a dark-grey floor so text stays legible.
+  Any key wakes it without leaking into the UI behind.
+- **Returns you where you were** — closing the dashboard re-opens the tab that
+  was active when you opened it, instead of dumping you on a new chat.
+- **Persisted preferences** — screensaver on/off and the global fold state are
+  stored across restarts via the plugin storage API.
+
+## Keys
+
+| Key | Action |
+| --- | --- |
+| `ctrl+shift+d` / `alt+d` | Open the dashboard |
+| `esc` / `q` | Close (back to the previous tab) |
+| `←` / `→` | Previous / next session card |
+| `↑` / `↓` | Step from card into subagent rows and back |
+| `enter` / `return` | Open the selected session (card or subagent) and exit |
+| `space` | Expand/collapse the selection (one subagent row, or all rows of a selected card) |
+| `f` | Fold/expand all subagent details (persisted, clears per-row overrides) |
+| `a` | Show active sessions only |
+| `s` | Toggle the screensaver on/off (persisted) |
+| `PgUp` / `PgDn` | Scroll a page |
+| `g` / `G` | Jump to top / bottom |
+
+## Install
+
+OpenCode loads plugins from `~/.config/opencode/plugins/<name>/`.
+The installed copy is **source-only**: OpenCode resolves `@opencode/plugin`,
+`@opentui/*` and `solid-js` from its own runtime, so the plugin directory needs
+no `node_modules` (and a local copy would shadow the host's instances).
+
+```bash
+git clone <repo-url> opencode-session-dashboard
+cd opencode-session-dashboard
+npm install          # dev dependencies, for typecheck and tests only
+npm run deploy       # copies src/*.ts|tsx to ~/.config/opencode/plugins/session-dashboard
+```
+
+Then restart the TUI. `npm run deploy` wipes and replaces the target directory,
+so local edits belong in `src/` here, never in the installed copy.
+
+## Development
+
+```bash
+npm test         # node --test on test/dashboard.test.ts (rendering, layout, keys)
+npm run typecheck  # tsc --noEmit
+npm run deploy     # copy the sources into the live plugin directory
+```
+
+The TUI half of a plugin has no console, so runtime diagnostics are appended to
+`%TEMP%/session-dashboard-debug.log` (`$TMPDIR` elsewhere). Nothing else is
+written to disk.
+
+### Layout
+
+| File | Role |
+| --- | --- |
+| `src/index.ts` | Server-side plugin entry; the dashboard itself is TUI-only |
+| `src/tui.tsx` | Plugin setup, routing/close logic, view models, selection and keymap |
+| `src/render.ts` | Pure canvas renderer: cards, subagent detail blocks, chrome, rows |
+| `src/view.ts` | View types, tree flattening and the token/cost/age formatters |
+| `src/palette.ts` | Theme-derived palette and the screensaver's noise palette |
+| `scripts/deploy.mjs` | Copy `src/*.ts|tsx` into the local plugin directory |
+| `test/dashboard.test.ts` | Regression tests for layout, selection and screensaver |
+| `test/bench.ts` | Frame-timing harness for `buildRows`, run manually (`node test/bench.ts`) |
+
+Rendering is kept pure (`render.ts`) so it can be asserted on without a
+terminal; all animation and I/O live in `tui.tsx`.
+
+## Notes
+
+- The plugin targets `@opencode/plugin` ≥ 2.1.4 and `@opentui/*` ≥ 0.6.6.
+- `npm run deploy` targets the default config directory
+  (`~/.config/opencode/plugins`); edit the `target` path in
+  `scripts/deploy.mjs` if yours differs.
+- This repository is not affiliated with the OpenCode project.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
