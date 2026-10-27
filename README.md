@@ -22,6 +22,8 @@ This plugin is entirely created and maintained with OpenCode,
 prompted with love.
 ```
 
+<img width="1844" height="682" alt="image" src="https://github.com/user-attachments/assets/5b1553f5-a112-48c8-a336-a9340a6465e0" />
+
 > **AI-generated.** This plugin was written almost entirely by an AI coding
 > agent (working under human direction and review). Treat it as such: read the
 > source before relying on it, and expect rough edges. Issues and pull requests
@@ -66,6 +68,8 @@ prompted with love.
 | `s` | Toggle the screensaver on/off (persisted; re-enabling shows it at once) |
 | `PgUp` / `PgDn` | Scroll a page |
 | `g` / `G` | Jump to top / bottom |
+
+<img width="1844" height="737" alt="image" src="https://github.com/user-attachments/assets/410f37a5-a679-4450-b6f1-43868bf7217b" />
 
 ## Settings
 
@@ -134,6 +138,10 @@ written to disk.
 
 Rendering is kept pure (`render.ts`) so it can be asserted on without a
 terminal; all animation and I/O live in `tui.tsx`.
+
+---
+
+<img width="1855" height="788" alt="image" src="https://github.com/user-attachments/assets/d8b39ddb-c41a-4fbc-ade1-fc85ecddc1fe" />
 
 ## Notes
 
