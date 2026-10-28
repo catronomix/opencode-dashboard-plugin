@@ -211,6 +211,50 @@ export function saverLookOf(index: number | undefined): SaverLook {
   return SCREENSAVER_LOOKS[((safe % count) + count) % count]
 }
 
+/**
+ * What the mouse is over. The dashboard is a character canvas, so a click is
+ * resolved against the same geometry `buildRows` draws: a card, a subagent tree
+ * row (its header line) or an expanded subagent detail block.
+ */
+export type DashboardHit =
+  | { readonly kind: "none" }
+  | { readonly kind: "chrome" }
+  | { readonly kind: "card"; readonly card: number; readonly id: string }
+  | { readonly kind: "row"; readonly card: number; readonly row: number; readonly id: string }
+  | { readonly kind: "detail"; readonly card: number; readonly row: number; readonly id: string }
+
+/** Card-relative line offsets, shared with `drawCard`: 6 fields, separator, tree. */
+const TREE_FIRST_LINE = 8
+
+export function hitTest(vm: ViewModel, x: number, y: number): DashboardHit {
+  if (x < 0 || y < 0 || x >= vm.width || y >= vm.height) return { kind: "none" }
+  if (y < HEADER_ROWS) return { kind: "chrome" }
+  const layout = layoutOf(vm)
+  const widths = cardWidths(vm.cards.length, layout)
+  const top = HEADER_ROWS - vm.offsetY
+  for (let index = 0; index < vm.cards.length; index++) {
+    const card = vm.cards[index]
+    const left = cardLeft(widths, index) - vm.offsetX
+    const width = widths[index]
+    const height = cardHeight(card, layout.expanded)
+    if (x < left || x >= left + width || y < top || y >= top + height) continue
+    let row = top + TREE_FIRST_LINE
+    for (let position = 0; position < card.tree.length; position++) {
+      const line = card.tree[position]
+      if (y === row) return { kind: "row", card: index, row: position, id: line.id }
+      row++
+      if (line.sub && isExpanded(line, layout.expanded)) {
+        if (y >= row && y < row + DETAIL_ROWS) {
+          return { kind: "detail", card: index, row: position, id: line.id }
+        }
+        row += DETAIL_ROWS
+      }
+    }
+    return { kind: "card", card: index, id: card.id }
+  }
+  return { kind: "none" }
+}
+
 export function cardHeight(card: CardVM, expanded = false): number {
   const tree = card.tree.length ? card.tree.length + 1 : 0
   const details = card.tree.filter((line) => line.sub && isExpanded(line, expanded)).length * DETAIL_ROWS

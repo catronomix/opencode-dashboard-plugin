@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 
 import { createMatrixField, createNoiseField, createSkyField, createSweepField, palette, Perlin, readable, SAVER_FLOOR } from "../src/palette.ts"
 import { flattenTree, formatAge, formatCost, formatTokens, formatClock, padEnd, truncate, type SubVM } from "../src/view.ts"
-import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, contentSize, DETAIL_ROWS, HEADER_ROWS, SCREENSAVER_LOOKS, saverLookOf, type CardVM, type Layout, type Palette } from "../src/render.ts"
+import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, contentSize, DETAIL_ROWS, HEADER_ROWS, hitTest, SCREENSAVER_LOOKS, saverLookOf, type CardVM, type Layout, type Palette } from "../src/render.ts"
 import { DEFAULT_CONFIG, DEFAULT_WIDTH, MAX_WIDTH, MIN_WIDTH, configPath, parseConfig } from "../src/config.ts"
 
 const theme: Palette = {
@@ -415,6 +415,31 @@ test("the hint row brackets every key", () => {
   for (const hint of ["[esc/q] close", "[←/→] card", "[enter] open", "[F]old all", "[D]ynamic", "[S]creensaver"]) {
     assert.ok(hints.includes(hint), `missing ${hint} in ${hints}`)
   }
+})
+
+test("mouse hits resolve to cards, tree rows and subagent detail blocks", () => {
+  const tree = [
+    { id: "sub_a", connector: "├─ ", title: "explorer", detail: "running", status: "running" as const, sub },
+    { id: "sub_b", connector: "└─ ", title: "reviewer", detail: "idle", status: "idle" as const, sub, expanded: true },
+  ]
+  const vm = { ...view, height: 30, cards: [card({ tree })] }
+  // Card body, above the subagent tree (tree starts 8 lines under the top).
+  assert.deepEqual(hitTest(vm, 2, 5), { kind: "card", card: 0, id: "ses_1" })
+  // Subagent header lines: row 0 is collapsed, row 1 straight after it.
+  assert.deepEqual(hitTest(vm, 2, 11), { kind: "row", card: 0, row: 0, id: "sub_a" })
+  // The second row is expanded, so clicking its header folds it.
+  assert.deepEqual(hitTest(vm, 2, 12), { kind: "row", card: 0, row: 1, id: "sub_b" })
+  // Its detail block opens the subagent.
+  assert.deepEqual(hitTest(vm, 2, 13), { kind: "detail", card: 0, row: 1, id: "sub_b" })
+  assert.deepEqual(hitTest(vm, 2, 17), { kind: "detail", card: 0, row: 1, id: "sub_b" })
+  // Below the last detail row is still the card itself, not the tree.
+  assert.deepEqual(hitTest(vm, 2, 18), { kind: "card", card: 0, id: "ses_1" })
+  // Chrome, empty space, and the gap between two cards hit nothing clickable.
+  assert.deepEqual(hitTest(vm, 2, 1), { kind: "chrome" })
+  assert.deepEqual(hitTest(vm, 60, 5), { kind: "none" })
+  assert.deepEqual(hitTest({ ...vm, cards: [card(), card({ id: "ses_2" })] }, 46, 5), { kind: "none" })
+  // Vertical scrolling moves every click target with the content.
+  assert.deepEqual(hitTest({ ...vm, offsetY: 2 }, 2, 9), { kind: "row", card: 0, row: 0, id: "sub_a" })
 })
 
 test("empty dashboards explain themselves", () => {

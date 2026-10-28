@@ -50,6 +50,9 @@ prompted with love.
   grayscale characters fading gently in and out of the empty cells). `←`/`→`
   (or `↑`/`↓`) cycle the looks without waking the screensaver; any other key
   wakes it without leaking into the UI behind.
+- **Mouse** — click a session card to open it, click a subagent header row to
+  fold or unfold it, click a subagent's detail block to open that subagent, and
+  scroll the wheel to move the view up and down.
 - **`D`ynamic widths** — the selected card grows to 120% of the default width
   while every other card shrinks to 75%.
 - **Returns you where you were** — opening focuses the card for the tab you came
@@ -74,6 +77,15 @@ prompted with love.
 | `s` | Toggle the screensaver on/off (persisted; re-enabling shows it at once) |
 | `PgUp` / `PgDn` | Scroll a page |
 | `g` / `G` | Jump to top / bottom |
+
+### Mouse
+
+| Action | Result |
+| --- | --- |
+| Click a session card | Open that session (same as `enter` on the card) |
+| Click a subagent header row | Expand/collapse that subagent's detail block |
+| Click a subagent detail block | Open that subagent's session |
+| Wheel up / down | Scroll the view three rows per notch |
 
 ## Screensaver looks
 
@@ -153,7 +165,7 @@ written to disk.
 | --- | --- |
 | `src/index.ts` | Server-side plugin entry; the dashboard itself is TUI-only |
 | `src/tui.tsx` | Plugin setup, routing/close logic, view models, selection and keymap |
-| `src/render.ts` | Pure canvas renderer: card layout/widths, cards, subagent detail blocks, chrome, rows |
+| `src/render.ts` | Pure canvas renderer: card layout/widths, cards, subagent detail blocks, chrome, rows, mouse hit-testing |
 | `src/config.ts` | Settings file path, parsing and clamping (width, screensaver delay) |
 | `src/view.ts` | View types, tree flattening and the token/cost/age formatters |
 | `src/palette.ts` | Screensaver looks (noise, matrix, sine sweep, sparkling sky) and their truecolor LUTs |

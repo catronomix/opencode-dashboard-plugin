@@ -4,13 +4,15 @@ import type { Context, Route } from "@opencode/plugin/tui/context"
 import { appendFileSync } from "node:fs"
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 
-import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, HEADER_ROWS, SCREENSAVER_LOOKS, type CardVM, type Layout, type Palette, type Row } from "./render.ts"
+import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, HEADER_ROWS, hitTest, SCREENSAVER_LOOKS, type CardVM, type Layout, type Palette, type Row, type ViewModel } from "./render.ts"
 import { flattenTree, formatAge, formatCost, formatTokens, type SubVM, type TreeNode } from "./view.ts"
 import { loadConfig } from "./config.ts"
 import type { RGB } from "./palette.ts"
 
 const PAGE = "session-dashboard"
 const BLOCK_BG = "#000000"
+/** Rows a wheel notch scrolls. */
+const WHEEL_ROWS = 3
 const DEBUG_FILE = `${process.env.TEMP ?? process.env.TMPDIR ?? "."}/session-dashboard-debug.log`
 
 // Frame timing goes to a file because the TUI side of a plugin has no console.
@@ -445,11 +447,11 @@ function Dashboard(props: DashboardProps) {
     expanded: settings.expanded,
   }))
 
-  const rows = createMemo<Row[]>(() => {
+  const viewModel = createMemo<ViewModel>(() => {
     const current = size()
     const scroll = offset()
     const clamped = clampOffsets(cards(), current.width, current.height, scroll.x, scroll.y, layout())
-    return buildRows({
+    return {
       width: Math.max(1, current.width),
       height: Math.max(1, current.height),
       offsetX: clamped.offsetX,
@@ -468,8 +470,10 @@ function Dashboard(props: DashboardProps) {
       palette: palette(),
       sourceLabel: sourceLabel(),
       empty: "No open session tabs. Press a to include every running session.",
-    })
+    }
   })
+
+  const rows = createMemo<Row[]>(() => buildRows(viewModel()))
 
   const content = createMemo(() => toStyledText(rows()))
   // The reconciled `content` prop must stay non-empty: it is what creates the
@@ -655,6 +659,15 @@ function Dashboard(props: DashboardProps) {
 
   // Space expands/collapses the selection: one subagent row, or every row of
   // the card when the card itself is selected. `f` is still the global fold.
+  const toggleRow = (cardIndex: number, rowIndex: number): boolean => {
+    const line = cards()[cardIndex]?.tree[rowIndex]
+    if (!line) return false
+    const current = overrides()[line.id] ?? settings.expanded
+    debug(`toggle details for ${line.id} -> ${!current}`)
+    setOverrides((previous) => ({ ...previous, [line.id]: !current }))
+    return true
+  }
+
   const toggleSelectedDetails = () => {
     touch()
     const list = cards()
@@ -670,9 +683,52 @@ function Dashboard(props: DashboardProps) {
       setOverrides({})
       return
     }
-    const current = overrides()[line.id] ?? settings.expanded
-    debug(`toggle details for ${line.id} -> ${!current}`)
-    setOverrides((previous) => ({ ...previous, [line.id]: !current }))
+    toggleRow(card, row)
+  }
+
+  // Mouse: a click is resolved against the same geometry the renderer drew.
+  // Cards open their session, a subagent header row folds/unfolds that row and
+  // a subagent detail block opens the subagent. The wheel scrolls by design.
+  const onMouseDown = (event: { readonly button: number; readonly x: number; readonly y: number }) => {
+    if (event.button !== 0) return
+    if (screensaver()) {
+      touch()
+      return
+    }
+    const hit = hitTest(viewModel(), event.x, event.y)
+    const detail = "row" in hit ? ` card=${hit.card} row=${hit.row}` : "card" in hit ? ` card=${hit.card}` : ""
+    debug(`click ${event.x},${event.y} -> ${hit.kind}${detail}`)
+    if (hit.kind === "card") {
+      touch()
+      setSelection({ card: hit.card, row: -1 })
+      props.close({ type: "session", sessionID: hit.id })
+      return
+    }
+    if (hit.kind === "row") {
+      touch()
+      setSelection({ card: hit.card, row: hit.row })
+      toggleRow(hit.card, hit.row)
+      return
+    }
+    if (hit.kind === "detail") {
+      touch()
+      setSelection({ card: hit.card, row: hit.row })
+      props.close({ type: "session", sessionID: hit.id })
+    }
+  }
+
+  const onMouseScroll = (event: {
+    readonly scroll?: { readonly direction: "up" | "down" | "left" | "right"; readonly delta: number }
+  }) => {
+    if (screensaver()) {
+      touch()
+      return
+    }
+    const scrollInfo = event.scroll
+    if (!scrollInfo) return
+    const steps = Math.max(1, Math.abs(scrollInfo.delta || 1))
+    if (scrollInfo.direction === "up") scroll(0, -WHEEL_ROWS * steps)
+    else if (scrollInfo.direction === "down") scroll(0, WHEEL_ROWS * steps)
   }
 
   context.keymap.layer(() => ({
@@ -780,7 +836,15 @@ function Dashboard(props: DashboardProps) {
       backgroundColor={background()}
     >
       <text
-        ref={(node: TextRenderable) => setTextNode(node)}
+        ref={(node: TextRenderable) => {
+          setTextNode(node)
+          // The dashboard is interactive, so a click must not turn into a text
+          // selection drag; handlers resolve the click against the card layout.
+          node.selectable = false
+          node.onMouseDown = onMouseDown
+          node.onMouseScroll = onMouseScroll
+          debug(`mouse handlers attached (useMouse=${context.renderer.useMouse})`)
+        }}
         content={plainText()}
         wrapMode="none"
         width={size().width}
