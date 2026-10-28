@@ -42,15 +42,21 @@ prompted with love.
 - **Keyboard selection** — move across cards with `←`/`→`, down into the tree
   with `↑`/`↓`, and open the selected session in the main TUI with `enter`.
 - **Screensaver** — after two minutes of no input (configurable) the dashboard
-  fades to a black background with the whole canvas recoloured by an animated
-  Perlin-noise palette. Dark colours are clamped to a dark-grey floor so text
-  stays legible. Any key wakes it without leaking into the UI behind.
+  fades to a black background and the whole canvas is recoloured as an
+  animation. Four looks ship in truecolor: **perlin drift** (the original
+  groovy noise palette), **falling matrix** (green digital rain with a
+  white-green head and a decaying trail), **sine sweep** (a soft band of
+  drifting hue that travels down the screen) and **sparkling sky** (random
+  grayscale characters fading gently in and out of the empty cells). `←`/`→`
+  (or `↑`/`↓`) cycle the looks without waking the screensaver; any other key
+  wakes it without leaking into the UI behind.
 - **`D`ynamic widths** — the selected card grows to 120% of the default width
   while every other card shrinks to 75%.
 - **Returns you where you were** — opening focuses the card for the tab you came
   from, and closing re-opens that tab instead of dumping you on a new chat.
-- **Persisted preferences** — screensaver on/off, dynamic widths and the global
-  fold state are stored across restarts via the plugin storage API.
+- **Persisted preferences** — screensaver on/off and its current look, dynamic
+  widths and the global fold state are stored across restarts via the plugin
+  storage API.
 
 ## Keys
 
@@ -58,8 +64,8 @@ prompted with love.
 | --- | --- |
 | `ctrl+shift+d` / `alt+d` | Open the dashboard |
 | `esc` / `q` | Close (back to the previous tab) |
-| `←` / `→` | Previous / next session card |
-| `↑` / `↓` | Step from card into subagent rows and back |
+| `←` / `→` | Previous / next session card (while the screensaver runs: previous / next look) |
+| `↑` / `↓` | Step from card into subagent rows and back (while the screensaver runs: previous / next look) |
 | `enter` / `return` | Open the selected session (card or subagent) and exit |
 | `space` | Expand/collapse the selection (one subagent row, or all rows of a selected card) |
 | `f` | Fold/expand all subagent details (persisted, clears per-row overrides) |
@@ -131,7 +137,7 @@ written to disk.
 | `src/render.ts` | Pure canvas renderer: card layout/widths, cards, subagent detail blocks, chrome, rows |
 | `src/config.ts` | Settings file path, parsing and clamping (width, screensaver delay) |
 | `src/view.ts` | View types, tree flattening and the token/cost/age formatters |
-| `src/palette.ts` | Theme-derived palette and the screensaver's noise palette |
+| `src/palette.ts` | Screensaver looks (noise, matrix, sine sweep, sparkling sky) and their truecolor LUTs |
 | `scripts/deploy.mjs` | Copy `src/*.ts|tsx` into the local plugin directory |
 | `test/dashboard.test.ts` | Regression tests for layout, selection and screensaver |
 | `test/bench.ts` | Frame-timing harness for `buildRows`, run manually (`node test/bench.ts`) |

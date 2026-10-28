@@ -1,9 +1,9 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 
-import { createNoiseField, palette, Perlin, readable, SAVER_FLOOR } from "../src/palette.ts"
+import { createMatrixField, createNoiseField, createSkyField, createSweepField, palette, Perlin, readable, SAVER_FLOOR } from "../src/palette.ts"
 import { flattenTree, formatAge, formatCost, formatTokens, formatClock, padEnd, truncate, type SubVM } from "../src/view.ts"
-import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, contentSize, DETAIL_ROWS, HEADER_ROWS, type CardVM, type Layout, type Palette } from "../src/render.ts"
+import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, contentSize, DETAIL_ROWS, HEADER_ROWS, SCREENSAVER_LOOKS, saverLookOf, type CardVM, type Layout, type Palette } from "../src/render.ts"
 import { DEFAULT_CONFIG, DEFAULT_WIDTH, MAX_WIDTH, MIN_WIDTH, configPath, parseConfig } from "../src/config.ts"
 
 const theme: Palette = {
@@ -420,4 +420,120 @@ test("the hint row brackets every key", () => {
 test("empty dashboards explain themselves", () => {
   const rows = buildRows({ ...view, width: 50, height: 6, cards: [], empty: "No open session tabs." })
   assert.match(rows.map((row) => row.map((run) => run.text).join("")).join("\n"), /No open session tabs/)
+})
+
+test("the screensaver looks cycle in order and wrap", () => {
+  assert.equal(SCREENSAVER_LOOKS.length, 4)
+  assert.deepEqual(
+    SCREENSAVER_LOOKS.map((look) => look.name),
+    ["perlin drift", "falling matrix", "sine sweep", "sparkling sky"],
+  )
+  assert.equal(saverLookOf(0), SCREENSAVER_LOOKS[0])
+  assert.equal(saverLookOf(3), SCREENSAVER_LOOKS[3])
+  assert.equal(saverLookOf(4), SCREENSAVER_LOOKS[0])
+  assert.equal(saverLookOf(-1), SCREENSAVER_LOOKS[3])
+  // Junk from a hand-edited setting must not blank the screensaver.
+  assert.equal(saverLookOf(undefined), SCREENSAVER_LOOKS[0])
+  assert.equal(saverLookOf(Number.NaN), SCREENSAVER_LOOKS[0])
+  assert.equal(saverLookOf(2.6), SCREENSAVER_LOOKS[3])
+})
+
+test("the falling matrix look runs green trails downwards", () => {
+  const field = createMatrixField()
+  const brightestRow = (x: number, seconds: number): number => {
+    let best = -1
+    let row = -1
+    for (let y = 0; y < 140; y++) {
+      const green = field.at(x, y, seconds)[1]
+      if (green > best) {
+        best = green
+        row = y
+      }
+    }
+    return row
+  }
+  // Every colour is green-dominant, and the trail is darker than the head.
+  const head = field.at(7, brightestRow(7, 0), 0)
+  assert.ok(head[1] > head[0] && head[1] >= head[2], `not green: ${head}`)
+  const trail = field.at(7, Math.max(0, brightestRow(7, 0) - 6), 0)
+  assert.ok(trail[1] <= head[1], `trail brighter than head: ${trail} vs ${head}`)
+
+  // Heads travel: the brightest row differs between two frames.
+  assert.notEqual(brightestRow(7, 0), brightestRow(7, 0.6))
+  // Below the stream is black, so the trail is allowed past the grey floor.
+  assert.ok(field.floor < SAVER_FLOOR)
+})
+
+test("the sine sweep look bands vertically and moves", () => {
+  const field = createSweepField()
+  const brightness = (y: number, seconds: number) => field.at(12, y, seconds).reduce((sum, channel) => sum + channel, 0)
+  const peak = (seconds: number) => {
+    let best = -1
+    let row = 0
+    for (let y = 0; y < 60; y++) {
+      const value = brightness(y, seconds)
+      if (value > best) {
+        best = value
+        row = y
+      }
+    }
+    return row
+  }
+  // A band, not a flat wash: the brightest and darkest rows differ a lot.
+  const columns = Array.from({ length: 60 }, (_, y) => brightness(y, 0))
+  assert.ok(Math.max(...columns) - Math.min(...columns) > 60)
+  // The band travels as time advances.
+  assert.notEqual(peak(0), peak(1.3))
+  // Colours are truecolor RGB, not quantised to a foreground ANSI palette.
+  for (let y = 0; y < 60; y++) {
+    for (const channel of field.at(12, y, 0)) assert.ok(channel >= 0 && channel <= 255)
+  }
+})
+
+test("the sparkling sky twinkles in grayscale and blanks unlit cells", () => {
+  const field = createSkyField()
+  assert.equal(field.floor, 0)
+  let lit = 0
+  let blank = 0
+  for (let x = 0; x < 60; x++) {
+    for (let y = 0; y < 20; y++) {
+      const color = field.at(x, y, 1.5)
+      assert.equal(color[0], color[1])
+      assert.equal(color[1], color[2])
+      const glyph = field.glyph?.(x, y, 1.5)
+      assert.ok(glyph !== undefined)
+      if (glyph === " ") blank++
+      else lit++
+    }
+  }
+  assert.ok(lit > 0, "no cell ever lights up")
+  assert.ok(blank > 0, "every cell is lit at once")
+  // Characters change over time on at least one cell.
+  const sample = Array.from({ length: 40 }, (_, x) => field.glyph?.(x, 5, 1.5)).join("")
+  const later = Array.from({ length: 40 }, (_, x) => field.glyph?.(x, 5, 3.9)).join("")
+  assert.notEqual(sample, later)
+})
+
+test("every screensaver look recolours the canvas and names itself", () => {
+  SCREENSAVER_LOOKS.forEach((look) => {
+    const rows = buildRows({
+      ...view,
+      width: 60,
+      height: 8,
+      screensaver: true,
+      saverLook: SCREENSAVER_LOOKS.indexOf(look),
+      seconds: 2,
+      idleMs: 120_000,
+      idleLimit: 120_000,
+      cards: [card()],
+    })
+    const header = rows[0].map((run) => run.text).join("")
+    assert.match(header, /screensaver/)
+    assert.ok(header.includes(look.name), `missing look name in ${header}`)
+    for (const row of rows) {
+      for (const run of row) {
+        for (const channel of run.fg) assert.ok(channel >= 0 && channel <= 255)
+      }
+    }
+  })
 })

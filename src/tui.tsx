@@ -4,7 +4,7 @@ import type { Context, Route } from "@opencode/plugin/tui/context"
 import { appendFileSync } from "node:fs"
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 
-import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, HEADER_ROWS, type CardVM, type Layout, type Palette, type Row } from "./render.ts"
+import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, HEADER_ROWS, SCREENSAVER_LOOKS, type CardVM, type Layout, type Palette, type Row } from "./render.ts"
 import { flattenTree, formatAge, formatCost, formatTokens, type SubVM, type TreeNode } from "./view.ts"
 import { loadConfig } from "./config.ts"
 import type { RGB } from "./palette.ts"
@@ -173,10 +173,10 @@ function Dashboard(props: DashboardProps) {
   const [lastInput, setLastInput] = createSignal(Date.now())
   const [now, setNow] = createSignal(Date.now())
   const [fills, setFills] = createSignal<Record<string, Fill>>({})
-  // Durable view settings: screensaver on/off, subagent details expanded, and
-  // the `D`ynamic card widths.
+  // Durable view settings: screensaver on/off, its current look, subagent
+  // details expanded, and the `D`ynamic card widths.
   const [settings, updateSettings] = context.storage.store("session-dashboard", {
-    initial: { saver: true, expanded: true, dynamic: false },
+    initial: { saver: true, expanded: true, dynamic: false, look: 0 },
   })
   // Selection: a card, or one of its subagent rows (row === -1 = the card).
   const [selection, setSelection] = createSignal<{ card: number; row: number }>({ card: 0, row: -1 })
@@ -457,6 +457,7 @@ function Dashboard(props: DashboardProps) {
       screensaver: screensaver(),
       saverEnabled: settings.saver,
       expanded: settings.expanded,
+      saverLook: Number(settings.look) || 0,
       cardWidth: config.width,
       dynamic: Boolean(settings.dynamic),
       selectedIndex: selection().card,
@@ -551,6 +552,22 @@ function Dashboard(props: DashboardProps) {
       return
     }
     action?.()
+  }
+
+  // The arrow keys change the screensaver look instead of waking it. Returns
+  // false when the screensaver is off, so the caller keeps its normal meaning.
+  // The idle clock is deliberately not touched: the screensaver stays up.
+  const cycleLook = (delta: number): boolean => {
+    if (!screensaver()) return false
+    const count = SCREENSAVER_LOOKS.length
+    const current = Number(settings.look) || 0
+    const next = (((Math.round(current) + delta) % count) + count) % count
+    debug(`screensaver look ${current} -> ${next}`)
+    setNow(Date.now())
+    void updateSettings((draft) => {
+      draft.look = next
+    })
+    return true
   }
 
   // Scrolls just enough that the selected card is on screen.
@@ -663,10 +680,34 @@ function Dashboard(props: DashboardProps) {
     priority: 100,
     commands: [
       { id: "session-dashboard.close.escape", bind: "escape,q", run: () => wake(finish) },
-      { id: "session-dashboard.card.prev", bind: "left", run: () => wake(() => moveCard(-1)) },
-      { id: "session-dashboard.card.next", bind: "right", run: () => wake(() => moveCard(1)) },
-      { id: "session-dashboard.row.prev", bind: "up", run: () => wake(() => moveRow(-1)) },
-      { id: "session-dashboard.row.next", bind: "down", run: () => wake(() => moveRow(1)) },
+      {
+        id: "session-dashboard.card.prev",
+        bind: "left",
+        run: () => {
+          if (!cycleLook(-1)) wake(() => moveCard(-1))
+        },
+      },
+      {
+        id: "session-dashboard.card.next",
+        bind: "right",
+        run: () => {
+          if (!cycleLook(1)) wake(() => moveCard(1))
+        },
+      },
+      {
+        id: "session-dashboard.row.prev",
+        bind: "up",
+        run: () => {
+          if (!cycleLook(-1)) wake(() => moveRow(-1))
+        },
+      },
+      {
+        id: "session-dashboard.row.next",
+        bind: "down",
+        run: () => {
+          if (!cycleLook(1)) wake(() => moveRow(1))
+        },
+      },
       { id: "session-dashboard.open", bind: "return,enter", run: () => wake(openSelected) },
       { id: "session-dashboard.expand", bind: "space", run: () => wake(toggleSelectedDetails) },
       { id: "session-dashboard.pageup", bind: "pageup", run: () => wake(() => scroll(0, -page())) },

@@ -7,7 +7,15 @@
  * nested boxes on every frame.
  */
 
-import { createNoiseField, readable, type RGB } from "./palette.ts"
+import {
+  createMatrixField,
+  createNoiseField,
+  createSkyField,
+  createSweepField,
+  readable,
+  type RGB,
+  type SaverLook,
+} from "./palette.ts"
 import { formatClock, padEnd, truncate, type SubVM, type TreeLine } from "./view.ts"
 
 /** Columns between two cards. */
@@ -63,6 +71,8 @@ export interface ViewModel {
   readonly saverEnabled: boolean
   /** Subagent detail blocks are expanded (toggled with `f`, persisted). */
   readonly expanded: boolean
+  /** Which screensaver look is showing (cycled with the arrow keys, persisted). */
+  readonly saverLook?: number
   /** Default card width in columns (from the settings file). */
   readonly cardWidth: number
   /** `D`ynamic widths: the selected card is wider, the rest slimmer. */
@@ -155,18 +165,27 @@ class Canvas {
     return this.rows[index] ?? []
   }
 
-  toRuns(screensaver: NoiseFieldLike | undefined, seconds: number): Row[] {
+  toRuns(saver: SaverLook | undefined, seconds: number, glyphStartRow = 0): Row[] {
     return this.rows.map((cells, y) => {
       const runs: Run[] = []
       let current: { text: string; fg: RGB; bold: boolean } | undefined
       cells.forEach((cell, x) => {
-        const fg = screensaver && cell.ch !== " " ? readable(screensaver.at(x, y, seconds)) : cell.fg
+        let ch = cell.ch
+        let fg = cell.fg
+        if (saver && y >= glyphStartRow && cell.ch === " ") {
+          // Glyph overrides only fill empty cells, so the dashboard's own text
+          // keeps its characters under a sparkling look. The header band is
+          // excluded so the clock and key hints stay readable.
+          const glyph = saver.glyph?.(x, y, seconds)
+          if (glyph !== undefined) ch = glyph
+        }
+        if (saver && ch !== " ") fg = readable(saver.at(x, y, seconds), saver.floor)
         if (current && current.fg === fg && current.bold === cell.bold) {
-          current.text += cell.ch
+          current.text += ch
           return
         }
         if (current) runs.push(current)
-        current = { text: cell.ch, fg, bold: cell.bold }
+        current = { text: ch, fg, bold: cell.bold }
       })
       if (current) runs.push(current)
       return runs
@@ -174,11 +193,23 @@ class Canvas {
   }
 }
 
-interface NoiseFieldLike {
-  at(x: number, y: number, seconds: number): RGB
-}
+/**
+ * Every screensaver look, in cycle order. Each one recolours the same canvas,
+ * so switching is instant and the dashboard stays readable underneath.
+ */
+export const SCREENSAVER_LOOKS: readonly SaverLook[] = [
+  createNoiseField(),
+  createMatrixField(),
+  createSweepField(),
+  createSkyField(),
+]
 
-const screensaverField = createNoiseField()
+/** Wraps around, and tolerates junk from a hand-edited settings file. */
+export function saverLookOf(index: number | undefined): SaverLook {
+  const count = SCREENSAVER_LOOKS.length
+  const safe = Number.isFinite(index) ? Math.round(index as number) : 0
+  return SCREENSAVER_LOOKS[((safe % count) + count) % count]
+}
 
 export function cardHeight(card: CardVM, expanded = false): number {
   const tree = card.tree.length ? card.tree.length + 1 : 0
@@ -378,10 +409,12 @@ export function buildRows(vm: ViewModel): Row[] {
   const title = " OPENCODE DASHBOARD "
   const running = vm.cards.filter((card) => card.status === "running").length
   const idleLeft = Math.max(0, vm.idleLimit - vm.idleMs)
+  const look = saverLookOf(vm.saverLook)
+  const lookNumber = SCREENSAVER_LOOKS.indexOf(look) + 1
   const clock = !vm.saverEnabled
     ? "screensaver off"
     : vm.screensaver
-      ? "screensaver ON"
+      ? `screensaver ON · ${lookNumber}/${SCREENSAVER_LOOKS.length} ${look.name}`
       : `screensaver in ${formatClock(idleLeft)}`
   const clockText = ` ${clock} `
   const clockFg = !vm.saverEnabled
@@ -405,17 +438,25 @@ export function buildRows(vm: ViewModel): Row[] {
 
   // Key hints: letter shortcuts show the key that types them, so `[F]old all`
   // is `F`; special keys get their whole name bracketed. `·` separates groups.
-  const hints = [
-    "[esc/q] close",
-    "[←/→] card",
-    "[↑/↓] row",
-    "[enter] open",
-    "[space] fold",
-    "[F]old all",
-    "[D]ynamic",
-    "[S]creensaver",
-    "[PgUp/PgDn] scroll",
-  ].join(" · ")
+  // While the screensaver runs the arrows change the look and any other key
+  // wakes the dashboard, so the hints swap to say so.
+  const hints = vm.screensaver
+    ? [
+        "[←/→] next look",
+        `[${lookNumber}/${SCREENSAVER_LOOKS.length}] ${look.name}`,
+        "[any other key] wake",
+      ].join(" · ")
+    : [
+        "[esc/q] close",
+        "[←/→] card",
+        "[↑/↓] row",
+        "[enter] open",
+        "[space] fold",
+        "[F]old all",
+        "[D]ynamic",
+        "[S]creensaver",
+        "[PgUp/PgDn] scroll",
+      ].join(" · ")
   canvas.text(0, 1, truncate(hints, Math.max(0, width - vm.sourceLabel.length - 2)), palette.faint)
   canvas.text(
     Math.max(0, width - Array.from(vm.sourceLabel).length),
@@ -439,5 +480,5 @@ export function buildRows(vm: ViewModel): Row[] {
     })
   }
 
-  return canvas.toRuns(vm.screensaver ? screensaverField : undefined, vm.seconds)
+  return canvas.toRuns(vm.screensaver ? look : undefined, vm.seconds, HEADER_ROWS)
 }
