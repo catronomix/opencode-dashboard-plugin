@@ -731,6 +731,21 @@ function Dashboard(props: DashboardProps) {
     else if (scrollInfo.direction === "down") scroll(0, WHEEL_ROWS * steps)
   }
 
+  // Hovering selects the column under the pointer, so the highlight (and
+  // `D`ynamic widths) follow the mouse. Over a subagent row the row is selected
+  // too, which is what the next `space`/`enter` would act on. Hover does not
+  // touch the idle clock, so moving the mouse cannot keep the screensaver away.
+  const onMouseMove = (event: { readonly x: number; readonly y: number }) => {
+    if (screensaver()) return
+    const hit = hitTest(viewModel(), event.x, event.y)
+    if (hit.kind !== "card" && hit.kind !== "row" && hit.kind !== "detail") return
+    const row = hit.kind === "row" ? hit.row : -1
+    const current = selection()
+    if (current.card === hit.card && current.row === row) return
+    debug(`hover ${event.x},${event.y} -> card=${hit.card} row=${row}`)
+    setSelection({ card: hit.card, row })
+  }
+
   context.keymap.layer(() => ({
     mode: "global",
     priority: 100,
@@ -842,6 +857,7 @@ function Dashboard(props: DashboardProps) {
           // selection drag; handlers resolve the click against the card layout.
           node.selectable = false
           node.onMouseDown = onMouseDown
+          node.onMouseMove = onMouseMove
           node.onMouseScroll = onMouseScroll
           debug(`mouse handlers attached (useMouse=${context.renderer.useMouse})`)
         }}

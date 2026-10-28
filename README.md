@@ -50,9 +50,10 @@ prompted with love.
   grayscale characters fading gently in and out of the empty cells). `←`/`→`
   (or `↑`/`↓`) cycle the looks without waking the screensaver; any other key
   wakes it without leaking into the UI behind.
-- **Mouse** — click a session card to open it, click a subagent header row to
-  fold or unfold it, click a subagent's detail block to open that subagent, and
-  scroll the wheel to move the view up and down.
+- **Mouse** — hovering a column selects it (the highlight and `D`ynamic widths
+  follow the pointer), clicking a session card opens it, clicking a subagent
+  header row folds or unfolds it, clicking a subagent's detail block opens that
+  subagent, and the wheel scrolls the view.
 - **`D`ynamic widths** — the selected card grows to 120% of the default width
   while every other card shrinks to 75%.
 - **Returns you where you were** — opening focuses the card for the tab you came
@@ -82,10 +83,15 @@ prompted with love.
 
 | Action | Result |
 | --- | --- |
+| Hover a card | Select that column (highlight follows the pointer; the row resets to the card) |
+| Hover a subagent row | Select that row as well as its column |
 | Click a session card | Open that session (same as `enter` on the card) |
 | Click a subagent header row | Expand/collapse that subagent's detail block |
 | Click a subagent detail block | Open that subagent's session |
 | Wheel up / down | Scroll the view three rows per notch |
+
+Moving the pointer never wakes the screensaver (hovering is not activity); a
+click or a wheel notch does.
 
 ## Screensaver looks
 
