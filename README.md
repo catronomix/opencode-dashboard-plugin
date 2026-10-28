@@ -75,6 +75,25 @@ prompted with love.
 | `PgUp` / `PgDn` | Scroll a page |
 | `g` / `G` | Jump to top / bottom |
 
+## Screensaver looks
+
+After the idle delay the dashboard goes black and the whole canvas is recoloured
+as an animation. Every look runs in truecolor (no 256-colour approximation) and
+recolours the glyphs that are already on screen, so nothing is re-laid out.
+While the screensaver is up, `←`/`↑` show the previous look and `→`/`↓` the
+next one; the arrows do not wake it, and the chosen look is remembered across
+restarts. Any other key wakes the dashboard.
+
+| # | Look | What it does |
+| --- | --- | --- |
+| 1 | `perlin drift` | Smooth 3D Perlin noise through the spectrum palette, floored at a readable dark grey |
+| 2 | `falling matrix` | Green digital rain: one stream per column at its own speed, near-white head and a decaying trail |
+| 3 | `sine sweep` | Soft horizontal band of drifting hue travelling down the screen |
+| 4 | `sparkling sky` | Random narrow grayscale glyphs fading gently in and out of the empty cells |
+
+The current look, its number and its name are shown in the header clock while
+the screensaver runs.
+
 <img width="1844" height="737" alt="image" src="https://github.com/user-attachments/assets/410f37a5-a679-4450-b6f1-43868bf7217b" />
 
 ## Settings
@@ -96,8 +115,8 @@ defaults on first run:
 | `screensaverSeconds` | `120` | Idle seconds before the screensaver starts, clamped to 10–3600 |
 
 Bad or missing values fall back to the defaults; a malformed file never breaks
-the dashboard. The two persisted view toggles (`s` and `d`) are stored by the
-host, not in this file.
+the dashboard. The persisted view toggles (`s`, `d`, `f`) and the current
+screensaver look are stored by the host, not in this file.
 
 ## Install
 
@@ -119,7 +138,7 @@ so local edits belong in `src/` here, never in the installed copy.
 ## Development
 
 ```bash
-npm test         # node --test on test/dashboard.test.ts (rendering, layout, keys)
+npm test         # node --test on test/dashboard.test.ts (rendering, layout, keys, screensaver looks)
 npm run typecheck  # tsc --noEmit
 npm run deploy     # copy the sources into the live plugin directory
 ```
