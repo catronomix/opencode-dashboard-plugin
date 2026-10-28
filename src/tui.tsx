@@ -5,9 +5,10 @@ import { appendFileSync } from "node:fs"
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 
 import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, HEADER_ROWS, hitTest, SCREENSAVER_LOOKS, type CardVM, type Layout, type Palette, type Row, type ViewModel } from "./render.ts"
-import { flattenTree, formatAge, formatCost, formatTokens, type SubVM, type TreeNode } from "./view.ts"
+import { flattenTree, formatAge, formatCost, formatTokens, type AttentionKind, type SubVM, type TreeNode } from "./view.ts"
 import { loadConfig } from "./config.ts"
 import type { RGB } from "./palette.ts"
+import { ATTENTION_RANK, ATTENTION_WORD } from "./render.ts"
 
 const PAGE = "session-dashboard"
 const BLOCK_BG = "#000000"
@@ -310,8 +311,70 @@ function Dashboard(props: DashboardProps) {
     }
   }
 
-  const cards = createMemo<CardVM[]>(() => {
+  type Tab = ReturnType<typeof context.ui.tabs.list>[number]
+
+  // Root sessions on the dashboard: the open tabs, plus (with `a`) every other
+  // running session, which is where unattended work usually hides.
+  const roots = createMemo<Array<{ id: string; tab?: Tab }>>(() => {
     const tabs = context.ui.tabs.enabled() ? context.ui.tabs.list() : []
+    const sessions = context.data.session.list()
+    const next: Array<{ id: string; tab?: Tab }> = tabs.map((tab) => ({ id: tab.sessionID, tab }))
+    const seen = new Set(next.map((root) => root.id))
+    if (includeActive() || !tabs.length) {
+      const extras = sessions
+        .filter((session) => !seen.has(session.id) && !session.parentID)
+        .filter((session) => context.data.session.status(session.id) === "running")
+        .sort((left, right) => right.time.updated - left.time.updated)
+        .slice(0, 12)
+      for (const session of extras) next.push({ id: session.id })
+    }
+    return next
+  })
+
+  // Why a session in a visible family wants the user: a pending permission, an
+  // open question form, a failed or unread reply. Only the reason is kept; the
+  // headers decorate themselves with it.
+  const attention = createMemo(() => {
+    const tabs = context.ui.tabs.enabled() ? context.ui.tabs.list() : []
+    const tabByID = new Map(tabs.map((tab) => [tab.sessionID, tab]))
+    const family = new Set<string>()
+    for (const root of roots()) {
+      const members = context.data.session.family(root.id)
+      for (const id of members.length ? members : [root.id]) family.add(id)
+    }
+    const bySession = new Map<string, AttentionKind>()
+    for (const session of context.data.session.list()) {
+      if (!family.has(session.id)) continue
+      const permission = context.data.session.permission.list(session.id)?.[0]
+      const form = permission ? undefined : context.data.session.form.list(session.id)?.[0]
+      const tab = tabByID.get(session.id)
+      const kind: AttentionKind | undefined = permission
+        ? "permission"
+        : form
+          ? "question"
+          : tab?.unread === "error"
+            ? "error"
+            : tab?.unread === "activity"
+              ? "unread"
+              : undefined
+      if (kind) bySession.set(session.id, kind)
+    }
+    return bySession
+  })
+
+  /** Strongest attention across a session and its subagents. */
+  const strongestAttention = (sessionID: string): AttentionKind | undefined => {
+    const bySession = attention()
+    const family = context.data.session.family(sessionID)
+    let best: AttentionKind | undefined
+    for (const id of family.length ? family : [sessionID]) {
+      const kind = bySession.get(id)
+      if (kind && (!best || ATTENTION_RANK[kind] < ATTENTION_RANK[best])) best = kind
+    }
+    return best
+  }
+
+  const cards = createMemo<CardVM[]>(() => {
     const sessions = context.data.session.list()
     const byID = new Map(sessions.map((session) => [session.id, session]))
     const childrenOf = new Map<string, string[]>()
@@ -322,29 +385,16 @@ function Dashboard(props: DashboardProps) {
       else childrenOf.set(session.parentID, [session.id])
     }
 
-    const roots: Array<{ id: string; tab?: (typeof tabs)[number] }> = tabs.map((tab) => ({
-      id: tab.sessionID,
-      tab,
-    }))
-    const seen = new Set(roots.map((root) => root.id))
-
-    if (includeActive() || !tabs.length) {
-      const extras = sessions
-        .filter((session) => !seen.has(session.id) && !session.parentID)
-        .filter((session) => context.data.session.status(session.id) === "running")
-        .sort((left, right) => right.time.updated - left.time.updated)
-        .slice(0, 12)
-      for (const session of extras) roots.push({ id: session.id })
-    }
-
     const buildTree = (sessionID: string, depth: number): TreeNode[] => {
       const children = childrenOf.get(sessionID) ?? []
       return children.map((childID) => {
         const child = byID.get(childID)
         const details = detailsFor(childID, child)
         const status = context.data.session.status(childID) === "running" ? "running" : "idle"
+        // The header line leads with the reason it needs you, if any.
+        const reason = attention().get(childID)
         const detail = [
-          status,
+          reason ? ATTENTION_WORD[reason] : status,
           details.ctxRatio !== null ? `${Math.round(details.ctxRatio * 100)}%` : undefined,
           cardTokens(childID) ? formatTokens(cardTokens(childID)) : undefined,
         ]
@@ -355,6 +405,7 @@ function Dashboard(props: DashboardProps) {
           title: child?.title ?? childID.slice(4, 12),
           detail,
           status,
+          attention: reason,
           sub: details,
           children: depth < 3 ? buildTree(childID, depth + 1) : [],
         }
@@ -364,7 +415,7 @@ function Dashboard(props: DashboardProps) {
     const { card: selectedCard, row: selectedRow } = selection()
     const rowOverrides = overrides()
 
-    return roots.map(({ id, tab }, index) => {
+    return roots().map(({ id, tab }, index) => {
       const session = byID.get(id)
       const details = detailsFor(id, session)
       const tree = flattenTree(buildTree(id, 0)).map((line, row) => ({
@@ -381,6 +432,7 @@ function Dashboard(props: DashboardProps) {
         status: tab ? (tab.busy ? "running" : context.data.session.status(id)) : context.data.session.status(id),
         active: tab?.active ?? false,
         unread: tab?.unread,
+        attention: strongestAttention(id),
         ctxLabel: details.ctxLabel,
         ctxRatio: details.ctxRatio,
         tokensLabel: details.tokensLabel,
@@ -404,18 +456,42 @@ function Dashboard(props: DashboardProps) {
     )
   }
 
+  // Pending permissions and question forms live in the same store the host
+  // updates from events, but a request raised before the dashboard opened is
+  // only known after a sync. Sync once per session; later changes arrive as
+  // events.
+  const syncingAttention = new Set<string>()
+  function syncAttention(sessionID: string) {
+    const permission = context.data.session.permission
+    const form = context.data.session.form
+    if (permission.list(sessionID) !== undefined && form.list(sessionID) !== undefined) return
+    if (syncingAttention.has(sessionID)) return
+    syncingAttention.add(sessionID)
+    void (async () => {
+      try {
+        if (permission.list(sessionID) === undefined) await permission.sync(sessionID)
+        if (form.list(sessionID) === undefined) await form.sync(sessionID)
+      } catch (error) {
+        console.error(`session-dashboard: could not read pending requests for ${sessionID}`, error)
+      } finally {
+        syncingAttention.delete(sessionID)
+      }
+    })()
+  }
+
   // Load context windows for the sessions on screen (and their subagents)
   // whenever the card set changes.
   createEffect(() => {
-    for (const card of cards()) {
+    for (const root of roots()) {
       try {
-        const family = context.data.session.family(card.id)
-        for (const sessionID of family.length ? family : [card.id]) {
+        const family = context.data.session.family(root.id)
+        for (const sessionID of family.length ? family : [root.id]) {
           const session = context.data.session.get(sessionID)
           syncFill(sessionID, session?.time.updated ?? 0)
+          syncAttention(sessionID)
         }
       } catch (error) {
-        console.error(`session-dashboard: could not load session family for ${card.id}`, error)
+        console.error(`session-dashboard: could not load session family for ${root.id}`, error)
       }
     }
   })

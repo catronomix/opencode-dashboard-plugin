@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 
 import { createMatrixField, createNoiseField, createSkyField, createSweepField, palette, Perlin, readable, SAVER_FLOOR } from "../src/palette.ts"
 import { flattenTree, formatAge, formatCost, formatTokens, formatClock, padEnd, truncate, type SubVM } from "../src/view.ts"
-import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, contentSize, DETAIL_ROWS, HEADER_ROWS, hitTest, SCREENSAVER_LOOKS, saverLookOf, type CardVM, type Layout, type Palette } from "../src/render.ts"
+import { ATTENTION_RANK, buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, contentSize, DETAIL_ROWS, HEADER_ROWS, hitTest, SCREENSAVER_LOOKS, saverLookOf, type CardVM, type Layout, type Palette } from "../src/render.ts"
 import { DEFAULT_CONFIG, DEFAULT_WIDTH, MAX_WIDTH, MIN_WIDTH, configPath, parseConfig } from "../src/config.ts"
 
 const theme: Palette = {
@@ -440,6 +440,69 @@ test("mouse hits resolve to cards, tree rows and subagent detail blocks", () => 
   assert.deepEqual(hitTest({ ...vm, cards: [card(), card({ id: "ses_2" })] }, 46, 5), { kind: "none" })
   // Vertical scrolling moves every click target with the content.
   assert.deepEqual(hitTest({ ...vm, offsetY: 2 }, 2, 9), { kind: "row", card: 0, row: 0, id: "sub_a" })
+})
+
+test("attention decorates the card header and subagent header lines", () => {
+  const tree = [
+    {
+      id: "sub_a",
+      connector: "├─ ",
+      title: "builder",
+      detail: "permission · 20% · 120k",
+      status: "running" as const,
+      attention: "permission" as const,
+      sub,
+    },
+    {
+      id: "sub_b",
+      connector: "└─ ",
+      title: "reviewer",
+      detail: "question · 10%",
+      status: "idle" as const,
+      attention: "question" as const,
+    },
+  ]
+  const vm = { ...view, height: 24, cards: [card({ attention: "permission", tree })] }
+  const rows = buildRows(vm)
+  const text = rows.map((row) => row.map((run) => run.text).join("")).join("\n")
+  // Header: glyph + the reason instead of the status word.
+  assert.match(text, /! permission/)
+  assert.doesNotMatch(text, /● running/)
+  // Subagent header lines: glyph before the title, reason before the numbers.
+  assert.match(text, /├─ ! builder/)
+  assert.match(text, /└─ \? reviewer/)
+  assert.match(text, /permission · 20/)
+  assert.match(text, /question · 10%/)
+  // The decorators carry the reason's colour, on the header and on the rows.
+  const colors = rows.flatMap((row) => row.filter((run) => run.text.trim()).map((run) => [run.text, run.fg] as const))
+  assert.deepEqual(
+    colors.find(([value]) => value === "!")?.[1],
+    theme.warn,
+  )
+  assert.ok(colors.some(([value, fg]) => value.includes("?") && fg.join(",") === theme.accent.join(",")))
+})
+
+test("attention ranks blocking requests before errors and unread replies", () => {
+  const ordered = ["permission", "question", "error", "unread"] as const
+  const ranks = ordered.map((kind) => ATTENTION_RANK[kind])
+  assert.deepEqual(ranks, [...ranks].sort((left, right) => left - right))
+  assert.equal(new Set(ranks).size, ordered.length)
+})
+
+test("running main sessions paint the context bar in the warn yellow", () => {
+  const barColor = (status: "running" | "idle", ctxRatio: number) => {
+    const rows = buildRows({ ...view, height: 24, cards: [card({ status, ctxRatio })] })
+    const run = rows.flat().find((entry) => entry.text.includes("█"))
+    return run?.fg
+  }
+  // Same yellow as a high-usage subagent bar, whatever the actual usage is.
+  assert.deepEqual(barColor("running", 0.2), theme.warn)
+  assert.deepEqual(barColor("running", 0.66), theme.warn)
+  // Idle cards keep the green/amber/red usage ramp.
+  assert.deepEqual(barColor("idle", 0.2), theme.ok)
+  assert.deepEqual(barColor("idle", 0.8), theme.warn)
+  // Danger still wins over the running yellow.
+  assert.deepEqual(barColor("running", 0.95), theme.error)
 })
 
 test("empty dashboards explain themselves", () => {

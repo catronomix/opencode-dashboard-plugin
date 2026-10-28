@@ -16,7 +16,7 @@ import {
   type RGB,
   type SaverLook,
 } from "./palette.ts"
-import { formatClock, padEnd, truncate, type SubVM, type TreeLine } from "./view.ts"
+import { formatClock, padEnd, truncate, type AttentionKind, type SubVM, type TreeLine } from "./view.ts"
 
 /** Columns between two cards. */
 export const CARD_GAP = 2
@@ -51,6 +51,8 @@ export interface CardVM {
   readonly status: "running" | "idle"
   readonly active: boolean
   readonly unread?: "activity" | "error"
+  /** Strongest reason this card (or one of its subagents) needs the user. */
+  readonly attention?: AttentionKind
   readonly ctxLabel: string
   readonly ctxRatio: number | null
   readonly tokensLabel: string
@@ -312,11 +314,53 @@ function bar(ratio: number, width: number): { filled: number; empty: number } {
   return { filled, empty: width - filled }
 }
 
+/** Lower sorts first: blocking requests before errors, unread replies last. */
+export const ATTENTION_RANK: Readonly<Record<AttentionKind, number>> = {
+  permission: 0,
+  question: 1,
+  error: 2,
+  unread: 3,
+}
+
+/** One glyph per reason, all single-width so headers stay aligned. */
+export const ATTENTION_GLYPH: Readonly<Record<AttentionKind, string>> = {
+  permission: "!",
+  question: "?",
+  error: "×",
+  unread: "◑",
+}
+
+/** The word a header shows instead of the status while it needs the user. */
+export const ATTENTION_WORD: Readonly<Record<AttentionKind, string>> = {
+  permission: "permission",
+  question: "question",
+  error: "error",
+  unread: "unread",
+}
+
+/** Requests ask for you in yellow/cyan, failures in red, replies in yellow. */
+export function attentionColor(kind: AttentionKind, palette: Palette): RGB {
+  if (kind === "permission") return palette.warn
+  if (kind === "question") return palette.accent
+  if (kind === "error") return palette.error
+  return palette.warn
+}
+
 function statusDot(card: CardVM, palette: Palette): { glyph: string; fg: RGB } {
+  if (card.attention) return { glyph: ATTENTION_GLYPH[card.attention], fg: attentionColor(card.attention, palette) }
   if (card.unread === "error") return { glyph: "●", fg: palette.error }
   if (card.status === "running") return { glyph: "●", fg: palette.ok }
   if (card.unread === "activity") return { glyph: "◑", fg: palette.warn }
   return { glyph: "○", fg: palette.muted }
+}
+
+/** What the card's header strip calls this session's state. */
+function statusWord(card: CardVM): string {
+  if (card.attention) return ATTENTION_WORD[card.attention]
+  if (card.status === "running") return "running"
+  if (card.unread === "error") return "error"
+  if (card.unread === "activity") return "unread"
+  return "idle"
 }
 
 /** `ctx <bar> pct  used/limit`, shared by the card body and subagent detail blocks. */
@@ -328,12 +372,20 @@ function drawCtxLine(
   label: string,
   ratio: number | null,
   palette: Palette,
+  /** Running main sessions show the bar in the same yellow subagent bars use. */
+  running = false,
 ) {
   const barWidth = 14
   const pct = ratio === null ? "   " : `${String(Math.round(ratio * 100)).padStart(3)}%`
   const parts = bar(ratio ?? 0, barWidth)
   const fg =
-    ratio === null ? palette.faint : ratio > 0.9 ? palette.error : ratio > 0.7 ? palette.warn : palette.ok
+    ratio === null
+      ? palette.faint
+      : ratio > 0.9
+        ? palette.error
+        : running || ratio > 0.7
+          ? palette.warn
+          : palette.ok
   const prefix = "ctx "
   const pctX = x + prefix.length + barWidth + 1
   canvas.text(x, y, prefix, palette.faint)
@@ -383,19 +435,23 @@ function drawCard(
   }
 
   // Header strip inside the top border.
-  const status = card.status === "running" ? "running" : card.unread === "error" ? "error" : "idle"
+  const status = statusWord(card)
   const flags = `${card.active ? " · focused" : ""}${card.selected ? " · selected" : ""}`
   const headerLabel = ` ${dot.glyph} ${status}${flags} `
   const headerFg = card.selected
     ? palette.accent
-    : card.status === "running"
-      ? palette.ok
-      : card.unread === "error"
-        ? palette.error
-        : palette.muted
-  const headerX = x + 2
-  canvas.put(headerX, y, dot.glyph, dot.fg, true)
-  canvas.text(headerX + 2, y, headerLabel.slice(3), headerFg, true)
+    : card.attention
+      ? attentionColor(card.attention, palette)
+      : card.status === "running"
+        ? palette.ok
+        : card.unread === "error"
+          ? palette.error
+          : palette.muted
+  const headerX = x + 1
+  // Paint the whole label (including its spaces) so the border dash under the
+  // glyph does not show, then put the glyph on top in its own colour.
+  canvas.text(headerX, y, headerLabel, headerFg, true, Math.max(0, width - 2))
+  canvas.put(headerX + 1, y, dot.glyph, dot.fg, true)
 
   const line = (index: number) => y + 1 + index
   const write = (index: number, value: string, fg: RGB, bold = false) =>
@@ -407,7 +463,7 @@ function drawCard(
   write(1, card.path, palette.muted)
   write(2, [card.agent, card.model].filter(Boolean).join(" · "), palette.faint)
 
-  drawCtxLine(canvas, x + 2, line(3), inner, card.ctxLabel, card.ctxRatio, palette)
+  drawCtxLine(canvas, x + 2, line(3), inner, card.ctxLabel, card.ctxRatio, palette, card.status === "running")
 
   write(4, `tok ${card.tokensLabel}`, palette.muted)
   write(5, joinRight(card.costLabel, card.ageLabel, inner), palette.faint)
@@ -421,19 +477,32 @@ function drawCard(
     card.tree.forEach((entry) => {
       const detail = truncate(entry.detail, 16)
       const connector = Array.from(entry.connector).length
-      const room = inner - Array.from(detail).length - 1
+      // Attention decorates the header line: a glyph before the title, both in
+      // the reason's colour, so a blocked subagent is visible without folding
+      // its detail block open.
+      const mark = entry.attention ? `${ATTENTION_GLYPH[entry.attention]} ` : ""
+      const room = inner - Array.from(detail).length - 1 - Array.from(mark).length
       const label = padEnd(
-        truncate(`${entry.connector}${entry.title}`, Math.max(4, room)),
+        truncate(`${entry.connector}${mark}${entry.title}`, Math.max(4, room)),
         Math.max(0, room),
       )
-      const fg = entry.selected ? palette.accent : entry.status === "running" ? palette.ok : palette.muted
+      const tone = entry.attention
+        ? attentionColor(entry.attention, palette)
+        : entry.status === "running"
+          ? palette.ok
+          : palette.muted
+      const fg = entry.selected ? palette.accent : tone
       if (entry.selected) canvas.put(x + width - 2, line(row), "◂", palette.accent, true)
       canvas.text(x + 2, line(row), label, fg, entry.selected)
+      if (entry.attention) {
+        const at = x + 2 + connector
+        canvas.put(at, line(row), ATTENTION_GLYPH[entry.attention], entry.selected ? palette.accent : tone, true)
+      }
       canvas.text(
         x + width - 3 - Array.from(detail).length,
         line(row),
         detail,
-        entry.selected ? palette.accent : entry.status === "running" ? palette.ok : palette.faint,
+        entry.selected ? palette.accent : entry.attention ? tone : entry.status === "running" ? palette.ok : palette.faint,
       )
       row++
       if (entry.sub && isExpanded(entry, expanded)) {

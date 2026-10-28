@@ -71,7 +71,15 @@ export interface TreeNode {
   readonly status: "running" | "idle"
   readonly children: readonly TreeNode[]
   readonly sub?: SubVM
+  readonly attention?: AttentionKind
 }
+
+/**
+ * Why a session needs the user: the four moments OpenCode raises a toast for.
+ * A permission request and a question form block the agent, an error wants a
+ * look, and an unread reply is simply waiting to be read.
+ */
+export type AttentionKind = "permission" | "question" | "error" | "unread"
 
 export interface TreeLine {
   readonly id: string
@@ -81,6 +89,8 @@ export interface TreeLine {
   readonly status: "running" | "idle"
   /** Detail block contents; drawn when the dashboard has details expanded. */
   readonly sub?: SubVM
+  /** Decorates this subagent's header line when it (or a child) needs you. */
+  readonly attention?: AttentionKind
   // The keyboard selection rests on this subagent row.
   readonly selected?: boolean
   /**
@@ -103,6 +113,7 @@ export function flattenTree(nodes: readonly TreeNode[], depth = 0, prefix = ""):
       detail: node.detail,
       status: node.status,
       sub: node.sub,
+      attention: node.attention,
     })
     const childPrefix = depth === 0 ? (last ? "   " : "│  ") : `${prefix}${last ? "   " : "│  "}`
     if (node.children.length) lines.push(...flattenTree(node.children, depth + 1, childPrefix))

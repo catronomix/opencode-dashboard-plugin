@@ -35,10 +35,17 @@ prompted with love.
 
 - **Session cards** — one card per open tab: title, working directory, agent and
   model, a context-window bar, token totals, cost and age. The card whose tab is
-  focused is marked `· focused`; running sessions get a green header dot.
+  focused is marked `· focused`; running sessions get a green header dot and a
+  yellow context bar (idle cards keep the green/amber/red usage ramp).
 - **Subagent tree** — child sessions are listed under their parent with a status
   and their current activity. Each subagent has an expandable detail block
   (path, agent · model, context bar, tokens, cost · age).
+- **Attention decorators** — a card or subagent that wants you swaps its status
+  for the reason: `! permission` (yellow), `? question` (cyan), `× error` (red)
+  or `◑ unread` (yellow). The card header rolls the strongest reason across the
+  card and its subagents up to the column, and each subagent's header line gets
+  the glyph before its title plus the reason leading its detail (`permission ·
+  20% · 120k`). Strongest first: permission, question, error, unread.
 - **Keyboard selection** — move across cards with `←`/`→`, down into the tree
   with `↑`/`↓`, and open the selected session in the main TUI with `enter`.
 - **Screensaver** — after two minutes of no input (configurable) the dashboard
@@ -92,6 +99,25 @@ prompted with love.
 
 Moving the pointer never wakes the screensaver (hovering is not activity); a
 click or a wheel notch does.
+
+## Attention
+
+Nothing pops up over the dashboard: a session that needs you says so on its own
+header. Four moments are recognised, strongest first:
+
+| Decorator | Meaning |
+| --- | --- |
+| `! permission` | A tool is waiting for approval: the header turns yellow and reads `permission` |
+| `? question` | An open question/form is waiting: cyan, reads `question` |
+| `× error` | The host flagged the tab's last reply as failed: red, reads `error` |
+| `◑ unread` | An unread reply is waiting in the tab: yellow, reads `unread` |
+
+A subagent carries its own decorator on its tree line (`├─ ! builder` with
+`permission · 20% · 120k` as the detail), and the column's header shows the
+strongest reason found anywhere in that card's subagent family, so a blocked
+subagent is visible without folding anything open. Pending permissions and
+forms are synced once per session when the dashboard opens and then kept live by
+the host's events.
 
 ## Screensaver looks
 
@@ -170,10 +196,10 @@ written to disk.
 | File | Role |
 | --- | --- |
 | `src/index.ts` | Server-side plugin entry; the dashboard itself is TUI-only |
-| `src/tui.tsx` | Plugin setup, routing/close logic, view models, selection and keymap |
-| `src/render.ts` | Pure canvas renderer: card layout/widths, cards, subagent detail blocks, chrome, rows, mouse hit-testing |
+| `src/tui.tsx` | Plugin setup, routing/close logic, view models, attention detection, selection and keymap |
+| `src/render.ts` | Pure canvas renderer: card layout/widths, cards, attention decorators, subagent detail blocks, chrome, rows, mouse hit-testing |
 | `src/config.ts` | Settings file path, parsing and clamping (width, screensaver delay) |
-| `src/view.ts` | View types, tree flattening and the token/cost/age formatters |
+| `src/view.ts` | View types (including the attention kinds), tree flattening and the token/cost/age formatters |
 | `src/palette.ts` | Screensaver looks (noise, matrix, sine sweep, sparkling sky) and their truecolor LUTs |
 | `scripts/deploy.mjs` | Copy `src/*.ts|tsx` into the local plugin directory |
 | `test/dashboard.test.ts` | Regression tests for layout, selection and screensaver |
