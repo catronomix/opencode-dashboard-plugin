@@ -436,7 +436,7 @@ function drawCard(
 
   // Header strip inside the top border.
   const status = statusWord(card)
-  const flags = `${card.active ? " · focused" : ""}${card.selected ? " · selected" : ""}`
+  const flags = card.active ? " · focused" : ""
   const headerLabel = ` ${dot.glyph} ${status}${flags} `
   const headerFg = card.selected
     ? palette.accent

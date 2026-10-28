@@ -258,7 +258,7 @@ test("the subagent divider lines up with the card sides", () => {
   assert.equal(divider.slice(left + 1, right), "─".repeat(right - left - 1))
 })
 
-test("selection is visible on the card header and the selected subagent row", () => {
+test("selection shows as an accent border and marker, never as text", () => {
   const tree = [
     { id: "a", connector: "├─ ", title: "builder", detail: "running", status: "running" as const, sub },
     { id: "b", connector: "└─ ", title: "reviewer", detail: "idle", status: "idle" as const },
@@ -266,7 +266,15 @@ test("selection is visible on the card header and the selected subagent row", ()
   const text = (rows: ReturnType<typeof buildRows>) =>
     rows.map((row) => row.map((run) => run.text).join("")).join("\n")
   const onCard = text(buildRows({ ...view, height: 24, cards: [card({ selected: true, tree })] }))
-  assert.match(onCard, /· selected/)
+  // The header carries status only; the marker and border carry the selection.
+  assert.doesNotMatch(onCard, /selected/)
+  assert.match(onCard, /◂/)
+  assert.match(onCard, /· focused/)
+  // The selected frame uses the accent colour on the title line.
+  const rows = buildRows({ ...view, height: 24, cards: [card({ selected: true, tree })] })
+  const titleRun = rows.flat().find((run) => run.text.includes("Fix auth bug"))
+  assert.ok(titleRun)
+  assert.deepEqual(titleRun.fg, theme.accent)
 
   const onRow = text(
     buildRows({
