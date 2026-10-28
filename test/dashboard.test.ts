@@ -513,6 +513,32 @@ test("running main sessions paint the context bar in the warn yellow", () => {
   assert.deepEqual(barColor("running", 0.95), theme.error)
 })
 
+test("running subagents tint their context bar like a running session", () => {
+  const barColor = (status: "running" | "idle", ctxRatio: number) => {
+    const rows = buildRows({
+      ...view,
+      height: 24,
+      expanded: true,
+      cards: [
+        card({
+          status: "idle",
+          tree: [{ id: "a", connector: "└─ ", title: "builder", detail: status, status, sub: { ...sub, ctxRatio } }],
+        }),
+      ],
+    })
+    // The card's own bar comes first; the subagent block's bar is the last one.
+    const bars = rows.flat().filter((entry) => entry.text.includes("█"))
+    assert.equal(bars.length, 2)
+    return bars[bars.length - 1].fg
+  }
+  assert.deepEqual(barColor("running", 0.2), theme.warn)
+  assert.deepEqual(barColor("running", 0.66), theme.warn)
+  // An idle subagent keeps the green/amber usage ramp.
+  assert.deepEqual(barColor("idle", 0.2), theme.ok)
+  assert.deepEqual(barColor("idle", 0.8), theme.warn)
+  assert.deepEqual(barColor("running", 0.95), theme.error)
+})
+
 test("empty dashboards explain themselves", () => {
   const rows = buildRows({ ...view, width: 50, height: 6, cards: [], empty: "No open session tabs." })
   assert.match(rows.map((row) => row.map((run) => run.text).join("")).join("\n"), /No open session tabs/)

@@ -396,12 +396,21 @@ function drawCtxLine(
 }
 
 /** Same fields the main card shows, indented under a subagent tree line. */
-function drawSubDetail(canvas: Canvas, x: number, y: number, width: number, sub: SubVM, palette: Palette) {
+function drawSubDetail(
+  canvas: Canvas,
+  x: number,
+  y: number,
+  width: number,
+  sub: SubVM,
+  palette: Palette,
+  /** A running subagent tints its context bar like a running main session. */
+  running = false,
+) {
   const write = (offset: number, value: string, fg: RGB) =>
     canvas.text(x, y + offset, padEnd(truncate(value, width), width), fg)
   write(0, sub.path, palette.muted)
   write(1, [sub.agent, sub.model].filter(Boolean).join(" · "), palette.faint)
-  drawCtxLine(canvas, x, y + 2, width, sub.ctxLabel, sub.ctxRatio, palette)
+  drawCtxLine(canvas, x, y + 2, width, sub.ctxLabel, sub.ctxRatio, palette, running)
   write(3, `tok ${sub.tokensLabel}`, palette.muted)
   write(4, joinRight(sub.costLabel, sub.ageLabel, width), palette.faint)
 }
@@ -506,7 +515,15 @@ function drawCard(
       )
       row++
       if (entry.sub && isExpanded(entry, expanded)) {
-        drawSubDetail(canvas, x + 2 + connector, line(row), Math.max(4, inner - connector), entry.sub, palette)
+        drawSubDetail(
+          canvas,
+          x + 2 + connector,
+          line(row),
+          Math.max(4, inner - connector),
+          entry.sub,
+          palette,
+          entry.status === "running",
+        )
         row += DETAIL_ROWS
       }
     })
