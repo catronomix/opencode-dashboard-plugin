@@ -135,6 +135,8 @@ interface Cell {
 
 class Canvas {
   private readonly rows: Cell[][]
+  /** Nothing is written above this row; keeps scrolled cards under the chrome. */
+  private top = 0
   readonly width: number
   readonly height: number
 
@@ -146,8 +148,13 @@ class Canvas {
     )
   }
 
+  /** Hides every row above `top`, so the header band always stays on top. */
+  clip(top: number) {
+    this.top = Math.max(0, Math.floor(top))
+  }
+
   put(x: number, y: number, ch: string, fg: RGB, bold = false) {
-    if (y < 0 || y >= this.height || x < 0 || x >= this.width) return
+    if (y < this.top || y >= this.height || x < 0 || x >= this.width) return
     this.rows[y][x] = { ch, fg, bold }
   }
 
@@ -227,6 +234,26 @@ export type DashboardHit =
 
 /** Card-relative line offsets, shared with `drawCard`: 6 fields, separator, tree. */
 const TREE_FIRST_LINE = 8
+
+/**
+ * Line offset of a tree row's header line within its card (0 = card top),
+ * counting the detail blocks of the rows above it.
+ */
+export function treeRowTop(card: CardVM, rowIndex: number, expanded = false): number {
+  let top = TREE_FIRST_LINE
+  for (let index = 0; index < rowIndex && index < card.tree.length; index++) {
+    top += 1
+    const line = card.tree[index]
+    if (line.sub && isExpanded(line, expanded)) top += DETAIL_ROWS
+  }
+  return top
+}
+
+/** Rows a tree row occupies: its header line plus its detail block when open. */
+export function treeRowHeight(card: CardVM, rowIndex: number, expanded = false): number {
+  const line = card.tree[rowIndex]
+  return line?.sub && isExpanded(line, expanded) ? 1 + DETAIL_ROWS : 1
+}
 
 export function hitTest(vm: ViewModel, x: number, y: number): DashboardHit {
   if (x < 0 || y < 0 || x >= vm.width || y >= vm.height) return { kind: "none" }
@@ -596,6 +623,9 @@ export function buildRows(vm: ViewModel): Row[] {
     true,
   )
   canvas.text(0, 2, "─".repeat(width), palette.border)
+
+  // Scrolled cards must never paint over the header band.
+  canvas.clip(HEADER_ROWS)
 
   if (!vm.cards.length) {
     canvas.text(2, HEADER_ROWS, vm.empty, palette.muted)

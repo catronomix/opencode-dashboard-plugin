@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 
 import { createMatrixField, createNoiseField, createSkyField, createSweepField, palette, Perlin, readable, SAVER_FLOOR } from "../src/palette.ts"
 import { flattenTree, formatAge, formatCost, formatTokens, formatClock, padEnd, truncate, type SubVM } from "../src/view.ts"
-import { ATTENTION_RANK, buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, contentSize, DETAIL_ROWS, HEADER_ROWS, hitTest, SCREENSAVER_LOOKS, saverLookOf, type CardVM, type Layout, type Palette } from "../src/render.ts"
+import { ATTENTION_RANK, buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, contentSize, DETAIL_ROWS, HEADER_ROWS, hitTest, SCREENSAVER_LOOKS, saverLookOf, treeRowHeight, treeRowTop, type CardVM, type Layout, type Palette } from "../src/render.ts"
 import { DEFAULT_CONFIG, DEFAULT_WIDTH, MAX_WIDTH, MIN_WIDTH, configPath, parseConfig } from "../src/config.ts"
 
 const theme: Palette = {
@@ -235,6 +235,31 @@ test("scrolling shifts card content and clips at the edges", () => {
   assert.match(left, /Fix auth bug/)
   assert.doesNotMatch(right, /Fix auth bug/)
   assert.match(right, /Third/)
+})
+
+test("the header band stays on top of scrolled cards", () => {
+  const cards = [card()]
+  const clean = buildRows({ ...view, height: 20, offsetY: 0, cards })
+    .slice(0, HEADER_ROWS)
+    .map((row) => row.map((run) => run.text).join(""))
+  for (const offsetY of [1, 2, 3, 10]) {
+    const lines = buildRows({ ...view, height: 20, offsetY, cards }).map((row) =>
+      row.map((run) => run.text).join(""),
+    )
+    assert.deepEqual(lines.slice(0, HEADER_ROWS), clean, `offsetY=${offsetY}`)
+    assert.match(lines[0], /OPENCODE DASHBOARD/)
+  }
+})
+
+test("tree row offsets account for the detail blocks above", () => {
+  const entry = { connector: "├─ ", title: "builder", detail: "running", status: "running" as const, sub }
+  const band = card({ tree: [entry, { ...entry, id: "b", title: "reviewer" }] })
+  assert.equal(treeRowTop(band, 0), 8)
+  assert.equal(treeRowTop(band, 1), 9)
+  assert.equal(treeRowTop(band, 1, true), 9 + DETAIL_ROWS)
+  assert.equal(treeRowHeight(band, 0, true), 1 + DETAIL_ROWS)
+  assert.equal(treeRowHeight(band, 1, true), 1 + DETAIL_ROWS)
+  assert.equal(treeRowHeight(band, 0, false), 1)
 })
 
 test("the subagent divider lines up with the card sides", () => {

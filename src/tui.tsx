@@ -4,7 +4,7 @@ import type { Context, Route } from "@opencode/plugin/tui/context"
 import { appendFileSync } from "node:fs"
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 
-import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, HEADER_ROWS, hitTest, SCREENSAVER_LOOKS, type CardVM, type Layout, type Palette, type Row, type ViewModel } from "./render.ts"
+import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, HEADER_ROWS, hitTest, SCREENSAVER_LOOKS, treeRowHeight, treeRowTop, type CardVM, type Layout, type Palette, type Row, type ViewModel } from "./render.ts"
 import { flattenTree, formatAge, formatCost, formatTokens, type AttentionKind, type SubVM, type TreeNode } from "./view.ts"
 import { loadConfig } from "./config.ts"
 import type { RGB } from "./palette.ts"
@@ -650,8 +650,9 @@ function Dashboard(props: DashboardProps) {
     return true
   }
 
-  // Scrolls just enough that the selected card is on screen.
-  const reveal = (cardIndex: number) => {
+  // Scrolls just enough that the selected card (and row, when one is selected)
+  // is on screen.
+  const reveal = (cardIndex: number, rowIndex = -1) => {
     const list = cards()
     const card = list[cardIndex]
     if (!card) return
@@ -666,9 +667,17 @@ function Dashboard(props: DashboardProps) {
       let offsetY = previous.y
       if (left - offsetX < 1) offsetX = Math.max(0, left - 1)
       if (left + width - offsetX > current.width) offsetX = left + width - current.width
-      // Cards are laid out side by side, so a card that fits simply starts at
-      // the top; a taller one keeps whatever vertical scroll it had.
-      if (height <= viewport) offsetY = 0
+      // Cards are laid out side by side and share the same top, so selecting a
+      // card and selecting its first row both mean "show the card top"; a row
+      // further down scrolls just far enough to be visible.
+      if (height <= viewport || rowIndex < 0 || rowIndex >= card.tree.length) offsetY = 0
+      else {
+        const top = treeRowTop(card, rowIndex, settings.expanded)
+        // A detail block taller than the viewport only guarantees its header.
+        const extent = Math.min(treeRowHeight(card, rowIndex, settings.expanded), viewport)
+        if (top < offsetY) offsetY = top
+        else if (top + extent > offsetY + viewport) offsetY = top + extent - viewport
+      }
       const next = clampOffsets(list, current.width, current.height, offsetX, offsetY, {
         ...layout(),
         selected: cardIndex,
@@ -718,7 +727,7 @@ function Dashboard(props: DashboardProps) {
       }
     }
     setSelection({ card, row })
-    reveal(card)
+    reveal(card, row)
   }
 
   const openSelected = () => {
