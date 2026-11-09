@@ -605,6 +605,7 @@ export function buildRows(vm: ViewModel): Row[] {
       ].join(" · ")
     : [
         "[esc/q] close",
+        "[d] close tab",
         "[←/→] card",
         "[↑/↓] row",
         "[enter] open",

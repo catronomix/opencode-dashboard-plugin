@@ -48,6 +48,8 @@ prompted with love.
   20% · 120k`). Strongest first: permission, question, error, unread.
 - **Keyboard selection** — move across cards with `←`/`→`, down into the tree
   with `↑`/`↓`, and open the selected session in the main TUI with `enter`.
+- **Close tabs in place** — `d` / `delete` closes the selected card's session tab
+  without leaving the dashboard; the card list drops it and the rest stay put.
 - **Screensaver** — after two minutes of no input (configurable) the dashboard
   fades to a black background and the whole canvas is recoloured as an
   animation. Four looks ship in truecolor: **perlin drift** (the original
@@ -78,9 +80,10 @@ prompted with love.
 | `←` / `→` | Previous / next session card (while the screensaver runs: previous / next look) |
 | `↑` / `↓` | Step from card into subagent rows and back (while the screensaver runs: previous / next look) |
 | `enter` / `return` | Open the selected session (card or subagent) and exit |
+| `d` / `delete` | Close the selected card's session tab (subagent rows close nothing) |
 | `space` | Expand/collapse the selection (one subagent row, or all rows of a selected card) |
 | `f` | Fold/expand all subagent details (persisted, clears per-row overrides) |
-| `d` | `D`ynamic widths: emphasise the selected card, slim the others |
+| `shift+d` | `D`ynamic widths: emphasise the selected card, slim the others |
 | `a` | Show active sessions only |
 | `s` | Toggle the screensaver on/off (persisted; re-enabling shows it at once) |
 | `PgUp` / `PgDn` | Scroll a page |
@@ -159,7 +162,7 @@ defaults on first run:
 | `screensaverSeconds` | `120` | Idle seconds before the screensaver starts, clamped to 10–3600 |
 
 Bad or missing values fall back to the defaults; a malformed file never breaks
-the dashboard. The persisted view toggles (`s`, `d`, `f`) and the current
+the dashboard. The persisted view toggles (`s`, `D`, `f`) and the current
 screensaver look are stored by the host, not in this file.
 
 ## Install

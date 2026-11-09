@@ -100,6 +100,29 @@ export interface TreeLine {
   readonly expanded?: boolean
 }
 
+/** A card that can own an open session tab, as listed by the dashboard roots. */
+export interface CloseTargetCard {
+  readonly id: string
+  /** The open tab backing this card; absent for `a`-mode extra sessions. */
+  readonly tab?: unknown
+}
+
+/**
+ * The session whose tab `d`/`delete` closes: the selected card's session, and
+ * only when that card is a root card backed by an open tab. A selected subagent
+ * row (`row >= 0`), a card without a tab, or an out-of-range selection yields
+ * undefined, so the caller closes nothing.
+ */
+export function resolveCloseTarget(
+  cards: readonly CloseTargetCard[],
+  selection: { readonly card: number; readonly row: number },
+): string | undefined {
+  if (selection.row !== -1) return undefined
+  const card = cards[selection.card]
+  if (!card || !card.tab) return undefined
+  return card.id
+}
+
 /** Flattens a subagent tree into indented lines with box-drawing connectors. */
 export function flattenTree(nodes: readonly TreeNode[], depth = 0, prefix = ""): TreeLine[] {
   const lines: TreeLine[] = []

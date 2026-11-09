@@ -5,7 +5,7 @@ import { appendFileSync } from "node:fs"
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 
 import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, HEADER_ROWS, hitTest, SCREENSAVER_LOOKS, treeRowHeight, treeRowTop, type CardVM, type Layout, type Palette, type Row, type ViewModel } from "./render.ts"
-import { flattenTree, formatAge, formatCost, formatTokens, type AttentionKind, type SubVM, type TreeNode } from "./view.ts"
+import { flattenTree, formatAge, formatCost, formatTokens, resolveCloseTarget, type AttentionKind, type SubVM, type TreeNode } from "./view.ts"
 import { loadConfig } from "./config.ts"
 import type { RGB } from "./palette.ts"
 import { ATTENTION_RANK, ATTENTION_WORD } from "./render.ts"
@@ -742,6 +742,21 @@ function Dashboard(props: DashboardProps) {
     props.close({ type: "session", sessionID })
   }
 
+  // `d`/`delete` closes the selected card's tab in place; the dashboard stays
+  // open and the reactive card list drops the tab. Subagent rows, cards without
+  // an open tab and a disabled tab list close nothing.
+  const closeSelected = () => {
+    const { card, row } = selection()
+    const target = resolveCloseTarget(roots(), { card, row })
+    if (!target) {
+      debug(`close tab skipped (card=${card} row=${row})`)
+      return
+    }
+    touch()
+    const closed = context.ui.tabs.close(target)
+    debug(`close tab ${target} (card=${card}) -> ${closed}`)
+  }
+
   // Space expands/collapses the selection: one subagent row, or every row of
   // the card when the card itself is selected. `f` is still the global fold.
   const toggleRow = (cardIndex: number, rowIndex: number): boolean => {
@@ -893,9 +908,16 @@ function Dashboard(props: DashboardProps) {
           }),
       },
       {
+        // Close the selected card's tab; a subagent row is not a root tab, so
+        // it never closes anything.
+        id: "session-dashboard.close-tab",
+        bind: "d,delete",
+        run: () => wake(closeSelected),
+      },
+      {
         // `D`ynamic widths: the selected card gains 20%, the rest lose 25%.
         id: "session-dashboard.toggle-dynamic",
-        bind: "d",
+        bind: "shift+d",
         run: () =>
           wake(() => {
             touch()

@@ -1,8 +1,9 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
+import { readFile } from "node:fs/promises"
 
 import { createMatrixField, createNoiseField, createSkyField, createSweepField, palette, Perlin, readable, SAVER_FLOOR } from "../src/palette.ts"
-import { flattenTree, formatAge, formatCost, formatTokens, formatClock, padEnd, truncate, type SubVM } from "../src/view.ts"
+import { flattenTree, formatAge, formatCost, formatTokens, formatClock, padEnd, resolveCloseTarget, truncate, type SubVM } from "../src/view.ts"
 import { ATTENTION_RANK, buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, contentSize, DETAIL_ROWS, HEADER_ROWS, hitTest, SCREENSAVER_LOOKS, saverLookOf, treeRowHeight, treeRowTop, type CardVM, type Layout, type Palette } from "../src/render.ts"
 import { DEFAULT_CONFIG, DEFAULT_WIDTH, MAX_WIDTH, MIN_WIDTH, configPath, parseConfig } from "../src/config.ts"
 
@@ -448,6 +449,29 @@ test("the hint row brackets every key", () => {
   for (const hint of ["[esc/q] close", "[←/→] card", "[enter] open", "[F]old all", "[D]ynamic", "[S]creensaver"]) {
     assert.ok(hints.includes(hint), `missing ${hint} in ${hints}`)
   }
+  assert.ok(hints.includes("[d] close tab"), `missing close-tab hint in ${hints}`)
+})
+
+test("resolveCloseTarget closes only the selected card's root tab", () => {
+  const cards = [{ id: "ses_a", tab: {} }, { id: "ses_b", tab: {} }, { id: "ses_extra" }]
+  // A selected card with an open tab resolves to its session id.
+  assert.equal(resolveCloseTarget(cards, { card: 0, row: -1 }), "ses_a")
+  assert.equal(resolveCloseTarget(cards, { card: 1, row: -1 }), "ses_b")
+  // A subagent row never closes anything, not even its parent card's tab.
+  assert.equal(resolveCloseTarget(cards, { card: 0, row: 0 }), undefined)
+  // An `a`-mode extra session has no tab to close.
+  assert.equal(resolveCloseTarget(cards, { card: 2, row: -1 }), undefined)
+  // Out-of-range selections (empty dashboard, stale index) are no-ops.
+  assert.equal(resolveCloseTarget(cards, { card: 9, row: -1 }), undefined)
+  assert.equal(resolveCloseTarget([], { card: 0, row: -1 }), undefined)
+  assert.equal(resolveCloseTarget(cards, { card: -1, row: -1 }), undefined)
+})
+
+test("d/delete bind close-tab and shift+d keeps dynamic widths", async () => {
+  const source = await readFile(new URL("../src/tui.tsx", import.meta.url), "utf8")
+  const command = (id: string) => source.match(new RegExp(`id: "session-dashboard\\.${id}",\\s*bind: "([^"]+)"`))?.[1]
+  assert.equal(command("close-tab"), "d,delete")
+  assert.equal(command("toggle-dynamic"), "shift+d")
 })
 
 test("mouse hits resolve to cards, tree rows and subagent detail blocks", () => {
