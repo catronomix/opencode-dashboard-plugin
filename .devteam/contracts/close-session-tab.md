@@ -56,6 +56,12 @@ binding.
 Peer `@opencode/plugin >=2.1.4` already exposes `ui.tabs.close`; no dependency
 change.
 
+## Close-out
+
+The change is live only after `npm run deploy`, with the installed
+`~/.config/opencode/plugins/session-dashboard/` hashes equal to `src/`, and a
+restart of the running OpenCode TUI (it keeps the plugin loaded at startup).
+
 ## Non-goals
 
 Confirm dialog, undo, bulk close, closing subagent sessions, mouse close

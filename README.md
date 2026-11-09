@@ -194,6 +194,16 @@ The TUI half of a plugin has no console, so runtime diagnostics are appended to
 `%TEMP%/session-dashboard-debug.log` (`$TMPDIR` elsewhere). Nothing else is
 written to disk.
 
+### Close-out
+
+A behaviour change is only live once it is deployed: run `npm run deploy` after
+the checks pass, then confirm the installed copy really has the new code instead
+of trusting the exit code alone. Compare hashes of `src/` against
+`~/.config/opencode/plugins/session-dashboard/` (e.g. `Get-FileHash` on Windows,
+`sha256sum` elsewhere); every file must match. A running OpenCode TUI keeps the
+plugin it loaded at startup, so restart it to pick the change up. `npm run deploy`
+is safe to repeat and never leaves stale files behind (it wipes the target first).
+
 ### Layout
 
 | File | Role |
