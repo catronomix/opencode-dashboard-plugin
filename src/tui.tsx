@@ -5,7 +5,7 @@ import { appendFileSync } from "node:fs"
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 
 import { buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, HEADER_ROWS, hitTest, SCREENSAVER_LOOKS, treeRowHeight, treeRowTop, type CardVM, type Layout, type Palette, type Row, type ViewModel } from "./render.ts"
-import { flattenTree, formatAge, formatCost, formatTokens, resolveCloseTarget, type AttentionKind, type SubVM, type TreeNode } from "./view.ts"
+import { flattenTree, formatAge, formatCost, formatTokens, isEmptyAfterClose, resolveCloseTarget, resolveExitTarget, type AttentionKind, type SubVM, type TreeNode } from "./view.ts"
 import { loadConfig } from "./config.ts"
 import type { RGB } from "./palette.ts"
 import { ATTENTION_RANK, ATTENTION_WORD } from "./render.ts"
@@ -80,14 +80,21 @@ export default Plugin.define({
           debug(`render page data=${safeJson(data)}`)
           const back = (data?.previous as Route | undefined) ?? ({ type: "home" } as Route)
           // The tab the user was looking at when the dashboard opened. Closing
-          // returns there instead of the new-chat home page.
+          // returns there instead of the new-chat home page, but only while that
+          // tab is still open: a closed tab would be re-admitted by the host.
           const previousTab = typeof data?.previousTab === "string" ? data.previousTab : undefined
+          // Where leaving lands when the caller has no destination of its own.
+          const fallbackRoute = (): Route => {
+            // Only the tab we came from gets the live-tab treatment: it may have
+            // been closed meanwhile, and routing to it would re-admit its tab.
+            // With no previous tab (opened from home/new) or tabs disabled, the
+            // old route stands.
+            if (!context.ui.tabs.enabled() || previousTab === undefined) return back
+            const exit = resolveExitTarget(previousTab, context.ui.tabs.list())
+            return exit ? { type: "session", sessionID: exit } : { type: "home" }
+          }
           const close = (destination?: Route) => {
-            const fallback: Route =
-              previousTab && context.data.session.get(previousTab)
-                ? { type: "session", sessionID: previousTab }
-                : back
-            const target = destination ?? fallback
+            const target = destination ?? fallbackRoute()
             debug(`navigate back to ${safeJson(target)}`)
             context.ui.router.navigate(target)
             // Safety net: never leave the user trapped on a blank page.
@@ -743,8 +750,10 @@ function Dashboard(props: DashboardProps) {
   }
 
   // `d`/`delete` closes the selected card's tab in place; the dashboard stays
-  // open and the reactive card list drops the tab. Subagent rows, cards without
-  // an open tab and a disabled tab list close nothing.
+  // open and the reactive card list drops the tab. Closing the last tab leaves
+  // for the new-session page instead, the same as closing it outside the
+  // dashboard. Subagent rows, cards without an open tab and a disabled tab list
+  // close nothing.
   const closeSelected = () => {
     const { card, row } = selection()
     const target = resolveCloseTarget(roots(), { card, row })
@@ -754,7 +763,14 @@ function Dashboard(props: DashboardProps) {
     }
     touch()
     const closed = context.ui.tabs.close(target)
+    // The host returns undefined despite the `boolean` typing, so the exit
+    // decision below reads the tab list instead of this flag.
     debug(`close tab ${target} (card=${card}) -> ${closed}`)
+    if (isEmptyAfterClose(context.ui.tabs.list(), target)) {
+      debug("close tab left no tabs open, leaving for a new session")
+      props.close({ type: "home" })
+      return
+    }
   }
 
   // Space expands/collapses the selection: one subagent row, or every row of

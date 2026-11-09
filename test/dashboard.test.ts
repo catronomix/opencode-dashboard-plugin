@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 
 import { createMatrixField, createNoiseField, createSkyField, createSweepField, palette, Perlin, readable, SAVER_FLOOR } from "../src/palette.ts"
-import { flattenTree, formatAge, formatCost, formatTokens, formatClock, padEnd, resolveCloseTarget, truncate, type SubVM } from "../src/view.ts"
+import { flattenTree, formatAge, formatCost, formatTokens, formatClock, isEmptyAfterClose, padEnd, resolveCloseTarget, resolveExitTarget, truncate, type SubVM } from "../src/view.ts"
 import { ATTENTION_RANK, buildRows, cardHeight, cardLeft, cardWidths, clampOffsets, contentSize, DETAIL_ROWS, HEADER_ROWS, hitTest, SCREENSAVER_LOOKS, saverLookOf, treeRowHeight, treeRowTop, type CardVM, type Layout, type Palette } from "../src/render.ts"
 import { DEFAULT_CONFIG, DEFAULT_WIDTH, MAX_WIDTH, MIN_WIDTH, configPath, parseConfig } from "../src/config.ts"
 
@@ -465,6 +465,46 @@ test("resolveCloseTarget closes only the selected card's root tab", () => {
   assert.equal(resolveCloseTarget(cards, { card: 9, row: -1 }), undefined)
   assert.equal(resolveCloseTarget([], { card: 0, row: -1 }), undefined)
   assert.equal(resolveCloseTarget(cards, { card: -1, row: -1 }), undefined)
+})
+
+test("isEmptyAfterClose recognises the list left by the last close", () => {
+  // A single tab still listed is the one just closed, so nothing survives it.
+  assert.equal(isEmptyAfterClose([{ sessionID: "ses_a", active: true }], "ses_a"), true)
+  // A stale list the host has not refreshed yet still only holds the target.
+  assert.equal(isEmptyAfterClose([{ sessionID: "ses_a" }], "ses_a"), true)
+  // The host already dropped the target, so an emptied list is the same answer.
+  assert.equal(isEmptyAfterClose([], "ses_a"), true)
+  // Any other open tab keeps the dashboard alive.
+  assert.equal(isEmptyAfterClose([{ sessionID: "ses_a" }, { sessionID: "ses_b" }], "ses_a"), false)
+  // Even a list where the target is already gone but another tab remains.
+  assert.equal(isEmptyAfterClose([{ sessionID: "ses_b" }], "ses_a"), false)
+})
+
+test("resolveExitTarget prefers the previous tab, else the active one, else home", () => {
+  const tabs = [{ sessionID: "ses_a" }, { sessionID: "ses_b", active: true }, { sessionID: "ses_c" }]
+  // The tab the user came from wins while it is still open.
+  assert.equal(resolveExitTarget("ses_c", tabs), "ses_c")
+  // A closed previous tab never comes back: fall through to the active tab.
+  assert.equal(resolveExitTarget("ses_closed", tabs), "ses_b")
+  // No previous tab: the active one, then the first one.
+  assert.equal(resolveExitTarget(undefined, tabs), "ses_b")
+  assert.equal(resolveExitTarget("ses_closed", [{ sessionID: "ses_a" }, { sessionID: "ses_b" }]), "ses_a")
+  // Nothing to land on means the host's new-session page.
+  assert.equal(resolveExitTarget(undefined, []), undefined)
+  assert.equal(resolveExitTarget("ses_closed", []), undefined)
+})
+
+test("closing the last tab leaves the dashboard for a new session", async () => {
+  const source = await readFile(new URL("../src/tui.tsx", import.meta.url), "utf8")
+  // The leave routine asks the shared helper where to land.
+  assert.match(source, /resolveExitTarget\(previousTab, context\.ui\.tabs\.list\(\)\)/)
+  // Without tabs or without a previous tab it keeps the old `back` route, so
+  // opening the dashboard from home still returns home.
+  assert.match(source, /if \(!context\.ui\.tabs\.enabled\(\) \|\| previousTab === undefined\) return back/)
+  // closeSelected routes home once the list is empty.
+  const closeSelected = source.slice(source.indexOf("const closeSelected = ()"), source.indexOf("const toggleRow"))
+  assert.match(closeSelected, /isEmptyAfterClose\(context\.ui\.tabs\.list\(\), target\)/)
+  assert.match(closeSelected, /props\.close\(\{ type: "home" \}\)/)
 })
 
 test("d/delete bind close-tab and shift+d keeps dynamic widths", async () => {

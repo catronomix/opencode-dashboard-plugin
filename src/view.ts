@@ -123,6 +123,38 @@ export function resolveCloseTarget(
   return card.id
 }
 
+/**
+ * The part of an open session tab the exit helpers read. The host's tab list
+ * carries more (title, busy, unread), but only the id and the routed tab decide
+ * where leaving the dashboard lands.
+ */
+export interface TabState {
+  readonly sessionID: string
+  /** The host currently routes to this tab. */
+  readonly active?: boolean
+}
+
+/**
+ * True when closing `target` leaves no tab open. Call it with the list as it is
+ * after the close: the target already dropped with nothing else open, a stale
+ * list still holding only the target, or an empty list all mean the dashboard
+ * has nowhere left to go but home.
+ */
+export function isEmptyAfterClose(tabs: readonly TabState[], target: string): boolean {
+  return !tabs.some((tab) => tab.sessionID !== target)
+}
+
+/**
+ * Where leaving the dashboard goes: the tab the user came from while it is
+ * still open, else the active tab, else the first open tab; undefined means the
+ * host's new-session page, which is the only sane landing with no tabs left.
+ * A closed previous tab never wins - the host would re-open its tab.
+ */
+export function resolveExitTarget(previous: string | undefined, tabs: readonly TabState[]): string | undefined {
+  if (previous !== undefined && tabs.some((tab) => tab.sessionID === previous)) return previous
+  return tabs.find((tab) => tab.active)?.sessionID ?? tabs[0]?.sessionID
+}
+
 /** Flattens a subagent tree into indented lines with box-drawing connectors. */
 export function flattenTree(nodes: readonly TreeNode[], depth = 0, prefix = ""): TreeLine[] {
   const lines: TreeLine[] = []

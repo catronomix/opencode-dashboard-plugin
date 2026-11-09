@@ -50,6 +50,8 @@ prompted with love.
   with `↑`/`↓`, and open the selected session in the main TUI with `enter`.
 - **Close tabs in place** — `d` / `delete` closes the selected card's session tab
   without leaving the dashboard; the card list drops it and the rest stay put.
+  Closing the last remaining tab closes it and leaves you on the new-session
+  page, the same as closing the last tab outside the dashboard.
 - **Screensaver** — after two minutes of no input (configurable) the dashboard
   fades to a black background and the whole canvas is recoloured as an
   animation. Four looks ship in truecolor: **perlin drift** (the original
@@ -66,7 +68,8 @@ prompted with love.
 - **`D`ynamic widths** — the selected card grows to 120% of the default width
   while every other card shrinks to 75%.
 - **Returns you where you were** — opening focuses the card for the tab you came
-  from, and closing re-opens that tab instead of dumping you on a new chat.
+  from, and closing returns to that tab while it is still open (a new session
+  when that tab was the last one) instead of dumping you on a new chat.
 - **Persisted preferences** — screensaver on/off and its current look, dynamic
   widths and the global fold state are stored across restarts via the plugin
   storage API.
@@ -80,7 +83,7 @@ prompted with love.
 | `←` / `→` | Previous / next session card (while the screensaver runs: previous / next look) |
 | `↑` / `↓` | Step from card into subagent rows and back (while the screensaver runs: previous / next look) |
 | `enter` / `return` | Open the selected session (card or subagent) and exit |
-| `d` / `delete` | Close the selected card's session tab (subagent rows close nothing) |
+| `d` / `delete` | Close the selected card's session tab (subagent rows close nothing; closing the last tab leaves for a new session) |
 | `space` | Expand/collapse the selection (one subagent row, or all rows of a selected card) |
 | `f` | Fold/expand all subagent details (persisted, clears per-row overrides) |
 | `shift+d` | `D`ynamic widths: emphasise the selected card, slim the others |
