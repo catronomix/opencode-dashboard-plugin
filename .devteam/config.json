@@ -1,0 +1,28 @@
+{
+  "commands": {
+    "lint": "",
+    "syntax": "npm run typecheck",
+    "test": "npm test",
+    "verify": ""
+  },
+  "conventions": {
+    "base_branch": "main",
+    "branch_prefix": "task/",
+    "commit_style": "meaningful commits, never squash",
+    "notes": "README.md"
+  },
+  "project": "opencode-session-dashboard",
+  "stack": [
+    "typescript",
+    "solid-js",
+    "@opentui/solid",
+    "node --test"
+  ],
+  "tracker": {
+    "cli": "gh",
+    "kind": "github",
+    "mode": "remote",
+    "repo": "catronomix/opencode-dashboard-plugin"
+  },
+  "version": 1
+}
