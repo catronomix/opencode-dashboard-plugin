@@ -3,13 +3,14 @@
     "lint": "",
     "syntax": "npm run typecheck",
     "test": "npm test",
-    "verify": ""
+    "verify": "npm run typecheck && npm test"
   },
   "conventions": {
     "base_branch": "main",
     "branch_prefix": "task/",
     "commit_style": "meaningful commits, never squash",
-    "notes": "README.md"
+    "notes": "README.md",
+    "verify_notes": "Lean verification: default DONE = syntax + smoke via verify cmd. Full test suite is opt-in via test cmd. No linter configured in this repo (no eslint/biome dep or config), so lint is intentionally empty; typecheck is the static gate."
   },
   "project": "opencode-session-dashboard",
   "stack": [
