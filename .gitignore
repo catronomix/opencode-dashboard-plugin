@@ -3,3 +3,6 @@ node_modules/
 .DS_Store
 .env
 .keys
+
+# shared publishing guide lives in the parent folder (C:\GITHUB\PUBLISH-GUIDE.md)
+PUBLISH-GUIDE.md
