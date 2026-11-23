@@ -1,10 +1,29 @@
 {
   "name": "@catronomix/opencode-session-dashboard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },
   "type": "module",
+  "description": "Fullscreen OpenCode TUI dashboard showing every open session and subagent with context fill, tokens, cost and idle screensavers.",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "opencode-plugin-tui",
+    "dashboard",
+    "sessions",
+    "subagents",
+    "tui"
+  ],
+  "homepage": "https://github.com/catronomix/opencode-dashboard-plugin#readme",
+  "bugs": {
+    "url": "https://github.com/catronomix/opencode-dashboard-plugin/issues"
+  },
+  "author": "Innocent Coppieters",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/catronomix/opencode-dashboard-plugin.git"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=22"
@@ -19,7 +38,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test test/dashboard.test.ts",
+    "test": "node --test test/dashboard.test.ts test/npm-readiness.test.mjs",
     "typecheck": "tsc --noEmit",
     "deploy": "node scripts/deploy.mjs",
     "release-check": "node scripts/release-check.mjs",

@@ -11,6 +11,9 @@
  *  - test assets, tsconfigs or .env files that leak into the tarball
  *  - a JSX entrypoint with no JSX runtime, which the host's transpiler rejects
  *  - a peer floor the opencode version users actually run cannot satisfy
+ *  - metadata a registry or index reads (`description`, `opencode-plugin`
+ *    keyword, `repository`, `publishConfig.access`) missing from the manifest
+ *  - reader-facing install text that pins a version and goes stale
  *
  * Run from a repo root: `node scripts/release-check.mjs`.
  * Exit code 0 = safe to publish. Non-zero = do not publish.
@@ -28,6 +31,8 @@ import { tmpdir } from "node:os"
 import { builtinModules } from "node:module"
 import { dirname, extname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+
+import { checkNpmReadiness } from "./lib/npm-readiness.mjs"
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))
@@ -64,6 +69,23 @@ const HOST_MATRIX = process.env.RELEASE_CHECK_HOST
       { "@opencode/plugin": "2.3.2", "@opentui/core": "0.9.4", "@opentui/solid": "0.9.4", "solid-js": "1.9.20" },
       { "@opencode/plugin": "2.4.0", "@opentui/core": "0.9.8", "@opentui/solid": "0.9.8", "solid-js": "1.9.20" },
     ]
+
+// ---------------------------------------------------------------------------
+// 0. npm readiness: what a registry, an index and a browsing human see.
+// ---------------------------------------------------------------------------
+section("npm readiness")
+{
+  const readmePath = ["README.md", "readme.md", "Readme.md"].map((file) => join(root, file)).find((file) => existsSync(file))
+  const readiness = checkNpmReadiness(pkg, {
+    readme: readmePath ? readFileSync(readmePath, "utf8") : undefined,
+    hasLicense: ["LICENSE", "LICENSE.md", "LICENCE"].some((file) => existsSync(join(root, file))),
+  })
+  for (const message of readiness.failures) fail(message)
+  for (const message of readiness.warnings) warn(message)
+  if (!readiness.failures.length) {
+    ok(`metadata is publishable (${pkg.name}@${pkg.version}, keywords include "opencode-plugin")`)
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 1. Manifest: peers are ranges, host packages are peers, versions agree.
