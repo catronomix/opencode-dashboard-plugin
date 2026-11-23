@@ -41,6 +41,35 @@ test("a missing description blocks the release", () => {
   assert.match(check(rest).failures.join("\n"), /description is missing/)
 })
 
+test("a short description only warns", () => {
+  const { failures, warnings } = check({ ...ready, description: "A dashboard." })
+  assert.deepEqual(failures, [])
+  assert.match(warnings.join("\n"), /description is only 12 chars/)
+})
+
+test("unscoped, uppercase and slashless names block the release", () => {
+  for (const name of ["opencode-session-dashboard", "@catronomix/Dashboard", "catronomix"]) {
+    assert.match(check({ ...ready, name }).failures.join("\n"), /not a scoped lowercase @scope\/name package/)
+  }
+})
+
+test("a version that is not semver blocks the release", () => {
+  for (const version of ["0.1.1-garbage!!!", "1.2.3.4", "01.2.3", "", "next"]) {
+    assert.match(check({ ...ready, version }).failures.join("\n"), /version is missing or not semver/)
+  }
+  assert.deepEqual(check({ ...ready, version: "1.2.3-rc.1+build.5" }).failures, [])
+})
+
+test("an empty files allowlist blocks the release", () => {
+  assert.match(check({ ...ready, files: [] }).failures.join("\n"), /files is present but empty/)
+})
+
+test("keywords missing entirely and a missing opencode-plugin tag are distinct failures", () => {
+  const { keywords, ...noKeywords } = ready
+  assert.match(check(noKeywords).failures.join("\n"), /keywords are missing/)
+  assert.match(check({ ...ready, keywords: ["opencode"] }).failures.join("\n"), /do not include "opencode-plugin"/)
+})
+
 test("a manifest without the opencode-plugin keyword blocks the release", () => {
   const manifest = { ...ready, keywords: ["opencode", "dashboard"] }
   assert.match(check(manifest).failures.join("\n"), /do not include "opencode-plugin"/)
@@ -107,4 +136,41 @@ test("specs for other packages are not attributed to this one", () => {
     "```",
   ].join("\n")
   assert.deepEqual(readerFacingPackageSpecs(other, ready.name), { sawInstall: false, pinned: [] })
+})
+
+test("a longer name sharing the prefix is not this package", () => {
+  const lookalike = [
+    "```sh",
+    "opencode plugin add @catronomix/opencode-session-dashboard-pro@0.2.0",
+    "```",
+  ].join("\n")
+  assert.deepEqual(readerFacingPackageSpecs(lookalike, ready.name), { sawInstall: false, pinned: [] })
+})
+
+test("a pinned version in prose or inline code is caught", () => {
+  const cases = [
+    `Pin an exact version (\`@catronomix/opencode-session-dashboard@0.1.0\`) only if you want to freeze it.`,
+    ["```sh", "npm i @catronomix/opencode-session-dashboard@0.1.0", "```"].join("\n"),
+  ]
+  for (const prose of cases) {
+    const { pinned } = readerFacingPackageSpecs(prose, ready.name)
+    assert.deepEqual(pinned, ["@catronomix/opencode-session-dashboard@0.1.0"])
+    assert.match(check(ready, { readme: `${readme}\n${prose}\n`, hasLicense: true }).failures.join("\n"), /pins @catronomix/)
+  }
+})
+
+test("a pin in a changelog section is history, not an instruction", () => {
+  const changelog = [
+    readme,
+    "",
+    "## Changelog",
+    "",
+    "- `0.1.0` - first release (`@catronomix/opencode-session-dashboard@0.1.0`)",
+  ].join("\n")
+  assert.deepEqual(readerFacingPackageSpecs(changelog, ready.name), { sawInstall: true, pinned: [] })
+  assert.deepEqual(check(ready, { readme: changelog, hasLicense: true }).failures, [])
+})
+
+test("a null context does not throw", () => {
+  assert.deepEqual(checkNpmReadiness(ready, null).warnings, [])
 })

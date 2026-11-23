@@ -15,13 +15,27 @@ export const REQUIRED_KEYWORD = "opencode-plugin"
 
 const PINNED = /@v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?/
 
+/** Full semver, anchored: `npm publish` rejects the rest (no leading zeros). */
+const NUMBER = "(?:0|[1-9]\\d*)"
+const SEMVER = new RegExp(
+  `^v?${NUMBER}\\.${NUMBER}\\.${NUMBER}(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$`,
+)
+
+/** Package name: scoped and lowercase, per PUBLISH-GUIDE §2. */
+const SCOPED_NAME = /^@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/
+
+const ANY_HEADING = /^#{1,6}\s/
+
+/** Sections where a concrete version is history, not an instruction (§7.3). */
+const HISTORY_HEADING = /^#{1,6}\s+(changelog|release notes|releases|history|what'?s new)\b/i
+
 /**
  * @param {Record<string, any>} pkg parsed package.json
  * @param {{ readme?: string, hasLicense?: boolean }} [context]
  * @returns {{ failures: string[], warnings: string[] }}
  */
 export function checkNpmReadiness(pkg, context = {}) {
-  const { readme, hasLicense = false } = context
+  const { readme, hasLicense = false } = context ?? {}
   const failures = []
   const warnings = []
 
@@ -31,11 +45,11 @@ export function checkNpmReadiness(pkg, context = {}) {
 
   const name = typeof pkg.name === "string" ? pkg.name.trim() : ""
   if (!name) failures.push("name is missing")
-  else if (!/^@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/.test(name)) {
-    failures.push(`name "${name}" is not a scoped @scope/name package (PUBLISH-GUIDE §2)`)
+  else if (!SCOPED_NAME.test(name)) {
+    failures.push(`name "${name}" is not a scoped lowercase @scope/name package (PUBLISH-GUIDE §2)`)
   }
 
-  if (typeof pkg.version !== "string" || !/^\d+\.\d+\.\d+/.test(pkg.version.trim())) {
+  if (typeof pkg.version !== "string" || !SEMVER.test(pkg.version.trim())) {
     failures.push("version is missing or not semver")
   }
 
@@ -95,10 +109,12 @@ export function checkNpmReadiness(pkg, context = {}) {
 
 /**
  * Finds the package specs a reader would copy out of a README: `opencode plugin
- * add <spec>` commands and `"plugins": ["<spec>"]` config snippets.
+ * add <spec>` commands, `"plugins": ["<spec>"]` config snippets, and any prose
+ * or inline-code mention of `<name>@<semver>`.
  *
  * A spec that names a concrete version is a pinned install command; it goes stale
- * on the next publish. `@next`-style tags and bare names are fine.
+ * on the next publish. `@next`-style tags and bare names are fine, and versions
+ * inside a changelog/releases section are history rather than instructions.
  *
  * @param {string} readme
  * @param {string} name
@@ -107,26 +123,40 @@ export function checkNpmReadiness(pkg, context = {}) {
 export function readerFacingPackageSpecs(readme, name) {
   const pinned = new Set()
   let sawInstall = false
-  if (!readme) return { sawInstall, pinned: [] }
+  if (!readme || !name) return { sawInstall, pinned: [] }
+
+  const namePins = new RegExp(`${escapeRegExp(name)}@v?\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?`, "g")
+  let inHistory = false
 
   for (const line of readme.split(/\r?\n/)) {
-    const addCommands = line.matchAll(/opencode\s+plugin\s+add\s+([^\s`'"]+)/g)
-    for (const [, spec] of addCommands) {
-      if (!name || !spec.startsWith(name)) continue
+    if (ANY_HEADING.test(line)) inHistory = HISTORY_HEADING.test(line)
+
+    for (const [, spec] of line.matchAll(/opencode\s+plugin\s+add\s+([^\s`'")]+)/g)) {
+      if (!namesSpec(spec, name)) continue
       sawInstall = true
-      if (PINNED.test(spec)) pinned.add(spec)
+      if (!inHistory && PINNED.test(spec)) pinned.add(spec)
     }
 
-    const pluginArrays = line.matchAll(/"plugins"\s*:\s*\[([^\]]*)\]/g)
-    for (const [, body] of pluginArrays) {
-      for (const match of body.matchAll(/"([^"]+)"/g)) {
-        const spec = match[1]
-        if (!name || !spec.startsWith(name)) continue
+    for (const [, body] of line.matchAll(/"plugins"\s*:\s*\[([^\]]*)\]/g)) {
+      for (const [, spec] of body.matchAll(/"([^"]+)"/g)) {
+        if (!namesSpec(spec, name)) continue
         sawInstall = true
-        if (PINNED.test(spec)) pinned.add(spec)
+        if (!inHistory && PINNED.test(spec)) pinned.add(spec)
       }
     }
+
+    if (inHistory) continue
+    for (const match of line.matchAll(namePins)) pinned.add(match[0])
   }
 
   return { sawInstall, pinned: [...pinned] }
+}
+
+/** True when a spec names this package, not a longer name that shares its prefix. */
+function namesSpec(spec, name) {
+  return spec === name || spec.startsWith(`${name}@`)
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }

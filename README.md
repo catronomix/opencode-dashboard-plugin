@@ -185,10 +185,11 @@ current release, `@next` follows the prerelease channel:
 
 Then restart the TUI. The package ships its sources and resolves
 `@opencode/plugin`, `@opentui/*` and `solid-js` from OpenCode's own runtime, so
-the plugin needs no `node_modules` of its own. Pin an exact version
-(`@catronomix/opencode-session-dashboard@0.1.0`) only if you want to freeze it;
-`opencode plugin check` and `opencode plugin update` move unpinned installs
-forward.
+the plugin needs no `node_modules` of its own. `opencode plugin check` reports
+newer releases and `opencode plugin update` installs them. If you want a frozen
+install, pin any published version you see in
+`npm view @catronomix/opencode-session-dashboard versions` — otherwise leave the
+name bare so updates keep flowing.
 
 ### From source (development)
 
