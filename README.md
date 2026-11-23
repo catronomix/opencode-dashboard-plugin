@@ -168,6 +168,30 @@ screensaver look are stored by the host, not in this file.
 
 ## Install
 
+### From npm (recommended)
+
+```sh
+opencode plugin add @catronomix/opencode-session-dashboard
+```
+
+or add it to the global `opencode.json(c)` yourself — a bare name resolves the
+current release, `@next` follows the prerelease channel:
+
+```jsonc
+{
+  "plugins": ["@catronomix/opencode-session-dashboard"]
+}
+```
+
+Then restart the TUI. The package ships its sources and resolves
+`@opencode/plugin`, `@opentui/*` and `solid-js` from OpenCode's own runtime, so
+the plugin needs no `node_modules` of its own. Pin an exact version
+(`@catronomix/opencode-session-dashboard@0.1.0`) only if you want to freeze it;
+`opencode plugin check` and `opencode plugin update` move unpinned installs
+forward.
+
+### From source (development)
+
 OpenCode loads plugins from `~/.config/opencode/plugins/<name>/`.
 The installed copy is **source-only**: OpenCode resolves `@opencode/plugin`,
 `@opentui/*` and `solid-js` from its own runtime, so the plugin directory needs
@@ -181,13 +205,16 @@ npm run deploy       # copies src/*.ts|tsx to ~/.config/opencode/plugins/session
 ```
 
 Then restart the TUI. `npm run deploy` wipes and replaces the target directory,
-so local edits belong in `src/` here, never in the installed copy.
+so local edits belong in `src/` here, never in the installed copy. Use either the
+path entry or the package entry, never both: two copies that resolve to the same
+plugin ID fight over the same hooks.
 
 ## Development
 
 ```bash
-npm test         # node --test on test/dashboard.test.ts (rendering, layout, keys, screensaver looks)
+npm test         # node --test: dashboard rendering/layout/keys/screensavers + npm-readiness gate rules
 npm run typecheck  # tsc --noEmit
+npm run release-check  # pack + install the tarball the way a consumer does
 npm run deploy     # copy the sources into the live plugin directory
 ```
 
@@ -217,6 +244,8 @@ is safe to repeat and never leaves stale files behind (it wipes the target first
 | `src/palette.ts` | Screensaver looks (noise, matrix, sine sweep, sparkling sky) and their truecolor LUTs |
 | `scripts/deploy.mjs` | Copy `src/*.ts|tsx` into the local plugin directory |
 | `test/dashboard.test.ts` | Regression tests for layout, selection and screensaver |
+| `test/npm-readiness.test.mjs` | Rules for publishable metadata and version-agnostic README install text |
+| `scripts/release-check.mjs` | Consumer-side release gate (pack, install, metadata) |
 | `test/bench.ts` | Frame-timing harness for `buildRows`, run manually (`node test/bench.ts`) |
 
 Rendering is kept pure (`render.ts`) so it can be asserted on without a
