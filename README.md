@@ -1,26 +1,24 @@
 # opencode-session-dashboard
 
-A fullscreen TUI plugin for [OpenCode](https://opencode.ai)
+[![npm](https://img.shields.io/npm/v/@catronomix/opencode-session-dashboard)](https://www.npmjs.com/package/@catronomix/opencode-session-dashboard)
+[![license](https://img.shields.io/npm/l/@catronomix/opencode-session-dashboard)](LICENSE)
+[![node](https://img.shields.io/node/v/@catronomix/opencode-session-dashboard)](https://nodejs.org)
 
-```
-Do you ever feel like you are staring at the prompt input box a bit too much, 
-flicking trough tabs to see what your agents are doing?
- 
-Then this plugin is for you! 
-OpenCode Dashboard is a fullscreen overlay that shows all open/active sessions, 
-listing statistics for all your agents in one overview. See the session title, 
-location, model, context fill, token hits and spenditure of each agent, 
-including subagents - nesting supported!
- 
-Maybe that's still TMI for you? No worries! 
-The f key quickly folds all subagents in single lines. 
- 
-Things can be pretty boring after a few minutes of staring at your 
-swarm crawls trough your precious token budget. But no more: when idle, 
-you will get treated to a groovy perlin noise animation.
-This plugin is entirely created and maintained with OpenCode, 
+A fullscreen TUI overlay for [OpenCode](https://opencode.ai) that shows every open
+session and subagent in one overview.
+
+Ever feel like you are staring at the prompt box a bit too much, flicking through
+tabs to see what your agents are doing? Then this plugin is for you. See the
+session title, location, model, context fill, token hits and spenditure of each
+agent, including subagents — nesting supported.
+
+Maybe that's still TMI? No worries: the `f` key folds all subagents into single
+lines.
+
+Things can get boring after a few minutes of watching a swarm crawl through your
+precious token budget, so when idle you get treated to a groovy perlin noise
+animation. This plugin is entirely created and maintained with OpenCode,
 prompted with love.
-```
 
 <img width="1844" height="682" alt="image" src="https://github.com/user-attachments/assets/5b1553f5-a112-48c8-a336-a9340a6465e0" />
 

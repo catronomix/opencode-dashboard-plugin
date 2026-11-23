@@ -8,6 +8,7 @@
   "conventions": {
     "base_branch": "main",
     "branch_prefix": "task/",
+    "worktree_root": "../opencode-session-dashboard-wt/<worktree-folder> (git worktree add only; fixed by the dev-team skill, not overridable)",
     "commit_style": "meaningful commits, never squash",
     "notes": "README.md",
     "verify_notes": "Lean verification: default DONE = syntax + smoke via verify cmd. Full test suite is opt-in via test cmd. No linter configured in this repo (no eslint/biome dep or config), so lint is intentionally empty; typecheck is the static gate."
